@@ -1,0 +1,122 @@
+# Phase 1 候选资产池（cn_etf_rot_v1）
+# 字段含义见 docs/data_contract.md §3.2。
+# 本清单不构成投资建议，仅为策略**候选池**；每季度复核一次。
+etfs:
+  # 宽基股票 ETF（T+1）
+  - symbol: "510300.SH"
+    name: "沪深300ETF"
+    etf_type: "broad_index"
+    settlement: "T+1"
+    stamp_tax_applicable: false
+    list_date: "2012-05-28"
+    delist_date: null
+    exchange: "SH"
+  - symbol: "510500.SH"
+    name: "中证500ETF"
+    etf_type: "broad_index"
+    settlement: "T+1"
+    stamp_tax_applicable: false
+    list_date: "2013-03-15"
+    delist_date: null
+    exchange: "SH"
+  - symbol: "510050.SH"
+    name: "上证50ETF"
+    etf_type: "broad_index"
+    settlement: "T+1"
+    stamp_tax_applicable: false
+    list_date: "2005-02-23"
+    delist_date: null
+    exchange: "SH"
+  - symbol: "159949.SZ"
+    name: "创业板50ETF"
+    etf_type: "broad_index"
+    settlement: "T+1"
+    stamp_tax_applicable: false
+    list_date: "2016-06-30"
+    delist_date: null
+    exchange: "SZ"
+  - symbol: "588000.SH"
+    name: "科创50ETF"
+    etf_type: "broad_index"
+    settlement: "T+1"
+    stamp_tax_applicable: false
+    list_date: "2020-09-28"
+    delist_date: null
+    exchange: "SH"
+  # 行业 ETF（T+1）
+  - symbol: "512760.SH"
+    name: "半导体ETF"
+    etf_type: "sector"
+    settlement: "T+1"
+    stamp_tax_applicable: false
+    list_date: "2019-05-16"
+    delist_date: null
+    exchange: "SH"
+  - symbol: "512170.SH"
+    name: "医疗ETF"
+    etf_type: "sector"
+    settlement: "T+1"
+    stamp_tax_applicable: false
+    list_date: "2014-12-04"
+    delist_date: null
+    exchange: "SH"
+  - symbol: "512000.SH"
+    name: "券商ETF"
+    etf_type: "sector"
+    settlement: "T+1"
+    stamp_tax_applicable: false
+    list_date: "2016-08-30"
+    delist_date: null
+    exchange: "SH"
+  - symbol: "512800.SH"
+    name: "银行ETF"
+    etf_type: "sector"
+    settlement: "T+1"
+    stamp_tax_applicable: false
+    list_date: "2017-08-08"
+    delist_date: null
+    exchange: "SH"
+  - symbol: "515030.SH"
+    name: "新能源车ETF"
+    etf_type: "sector"
+    settlement: "T+1"
+    stamp_tax_applicable: false
+    list_date: "2020-02-26"
+    delist_date: null
+    exchange: "SH"
+  # 债券 ETF（T+0）
+  - symbol: "511010.SH"
+    name: "国债ETF"
+    etf_type: "bond"
+    settlement: "T+0"
+    stamp_tax_applicable: false
+    list_date: "2013-03-25"
+    delist_date: null
+    exchange: "SH"
+  # 黄金 ETF（T+0）
+  - symbol: "518880.SH"
+    name: "黄金ETF"
+    etf_type: "gold"
+    settlement: "T+0"
+    stamp_tax_applicable: false
+    list_date: "2013-07-29"
+    delist_date: null
+    exchange: "SH"
+  # 跨境 ETF（T+0）
+  - symbol: "513100.SH"
+    name: "纳指ETF"
+    etf_type: "cross_border"
+    settlement: "T+0"
+    stamp_tax_applicable: false
+    list_date: "2013-05-15"
+    delist_date: null
+    exchange: "SH"
+  # 货币 ETF（T+0，仅作现金替代）
+  - symbol: "511880.SH"
+    name: "银华日利"
+    etf_type: "money_market"
+    settlement: "T+0"
+    stamp_tax_applicable: false
+    list_date: "2013-01-28"
+    delist_date: null
+    exchange: "SH"

@@ -1,0 +1,156 @@
+# 数据契约
+
+> 本文档定义本项目所有数据字段的来源、单位、口径、时间戳处理。
+> 上游：`CLAUDE.md §2`（研发硬约束）、`docs/engineering_rules.md`。
+> **任何新增字段或更改口径必须先更新本文件并通过 regression 测试。**
+
+---
+
+## 一、时间字段标准
+
+所有时间字段必须显式声明时区，**禁止 naive datetime**。
+
+| 字段 | 类型 | 含义 | 时区 |
+|---|---|---|---|
+| `asof_date` | date | 研究"当下"日期，决定哪些数据可见 | Asia/Shanghai |
+| `effective_date` | date | 数据正式可用日期；`effective_date ≤ asof_date` 才可访问 | Asia/Shanghai |
+| `announcement_date` | date | 公告发布日期（财务/事件类数据生效日） | Asia/Shanghai |
+| `report_period` | date | 财报所属期；**禁止**用此字段直接回填历史 | Asia/Shanghai |
+| `trade_date` | date | 交易日 | Asia/Shanghai |
+
+**收盘后公告规则**：交易日 T 收盘后发布的公告，最早可用日为 `effective_date = next_trade_date(T)`。
+
+---
+
+## 二、数据分层与路径
+
+| 层 | 路径 | 写入策略 | 用途 |
+|---|---|---|---|
+| raw | `data/raw/{vendor}/{YYYYMMDD}/...` | 一次写入，**永不改写** | 上游原始落地 |
+| interim | `data/interim/...` | 可改写 | 解析后中间产物 |
+| processed | `data/processed/...` | 可改写 | 清洗后的可用数据 |
+| feature_store | `data/feature_store/...` | 可改写 | 点时点因子表 |
+| reference | `data/reference/...` | 入库 | 交易日历、主数据、退市档案 |
+| snapshots | `data/snapshots/{snapshot_version}/...` | 入库 | **回测唯一可用来源** |
+
+`snapshot_version` 命名：`{YYYYMMDD}-{short_hash}`（如 `20260511-d4e5f6`）。
+
+---
+
+## 三、核心表 schema（初稿，W4 落地时定稿）
+
+### 3.1 交易日历 `trading_calendar`
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| trade_date | date | 交易日 |
+| is_open | bool | 是否开盘 |
+| prev_trade_date | date | 上一交易日 |
+| next_trade_date | date | 下一交易日 |
+| market | str | "SH" / "SZ" / "BJ" |
+
+### 3.2 ETF 主数据 `etf_master`
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| symbol | str | 标准化代码（如 `510300.SH`） |
+| name | str | 名称 |
+| etf_type | str | `broad_index` / `sector` / `bond` / `gold` / `cross_border` / `money_market` |
+| settlement | str | `T+1` / `T+0` |
+| stamp_tax_applicable | bool | 印花税是否适用（默认 false） |
+| list_date | date | 上市日期 |
+| delist_date | date \| null | 退市日期；保留退市样本 |
+| exchange | str | `SH` / `SZ` |
+
+### 3.3 行情 `prices_daily`（点时点）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| symbol | str | 标准化代码 |
+| trade_date | date | 交易日 |
+| open / high / low / close | float | 不复权价格 |
+| adj_factor | float | 复权因子 |
+| volume | int | 成交量 |
+| amount | float | 成交额（元） |
+| limit_up | float | 当日涨停价 |
+| limit_down | float | 当日跌停价 |
+| is_suspended | bool | 是否停牌 |
+| effective_date | date | 数据正式可用日（一般 = trade_date） |
+
+#### 3.3.1 AKShare ETF 日线输入契约
+
+`src/data/akshare_adapter.py` 只做本地字段标准化与校验，不联网、不写入快照、不被策略代码直接调用。
+
+| AKShare 原始字段 | 标准字段 | 约束 |
+|---|---|---|
+| 日期 | `trade_date` | 可解析为 Asia/Shanghai 交易日期 |
+| 开盘 | `open` | 正数，单位元 |
+| 最高 | `high` | 正数，且不低于 `open/low/close` |
+| 最低 | `low` | 正数，且不高于 `open/high/close` |
+| 收盘 | `close` | 正数，单位元 |
+| 成交量 | `volume` | 非负，单位份 |
+| 成交额 | `amount` | 正数，单位元；容量约束与 ADV 计算使用该字段 |
+| 涨停 | `limit_up` | 正数，单位元 |
+| 跌停 | `limit_down` | 正数，单位元 |
+| 停牌 | `is_suspended` | bool |
+| 复权因子 | `adj_factor` | 正数；项目内复权价统一为 `price × adj_factor` |
+
+标准化后自动补充：
+
+- `symbol`：由调用方显式传入标准代码，例如 `510300.SH`。
+- `effective_date`：ETF 日线行情默认等于 `trade_date`，且必须满足 `effective_date <= asof_date`。
+
+字段契约由 `tests/regression/test_akshare_contract.py` 锁定。缺失关键原始字段、非法价格、非法成交额、非法复权因子或违反 PIT 边界时必须失败。
+
+### 3.4 行业分类 `industry_mapping`
+
+按 `effective_date` 切片存储。**禁止**用最新版本回填历史。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| symbol | str | 代码 |
+| industry_l1 | str | 一级行业 |
+| industry_l2 | str | 二级行业 |
+| effective_date | date | 此映射的生效日 |
+| classification_version | str | 分类版本（如 `sw_2021`） |
+
+### 3.5 退市档案 `delist_history`
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| symbol | str | 代码 |
+| list_date | date | 上市日期 |
+| delist_date | date | 退市日期 |
+| reason | str | 退市原因 |
+| delist_warning_dates | list[date] | 退市风险警示发布日列表 |
+
+---
+
+## 四、复权处理
+
+- 引擎内部使用前复权计算收益；展示用按需切换。
+- 除权日前后净值必须连续——`tests/regression/test_adjusted_price_consistency.py` 验证。
+- 复权因子来源：交易所 / vendor 官方；**不允许**自行计算。
+
+---
+
+## 五、字段口径约束
+
+| 主题 | 约束 |
+|---|---|
+| 价格 | 全部"元"为单位，浮点 |
+| 成交量 | 整数"股"或"份"，不允许除权后强制对齐 |
+| 成交额 | "元"，与 `volume × close` 在容差内一致；不一致需在 `data/interim/` 记录差异 |
+| 财务数据 | 一律用 `announcement_date` 入模；`report_period` 仅展示 |
+| 缺失值 | 不允许 `0` 占位；用 `null`/`NaN` |
+| 类型 | 日期用 `date`，时间戳用 `pd.Timestamp(tz=...)`；禁止字符串日期混用 |
+
+---
+
+## 六、变更流程
+
+新增字段或更改口径：
+1. 先在本文件 PR；
+2. 同步更新 `tests/regression/test_*_contract.py`；
+3. 受影响快照重新生成并打新版本号；
+4. 写入 ADR `docs/adr/NNNN-data-contract-change.md`。

@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 工具缓存
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~
+
+# 私密 / 凭证（实盘、API key 永不入库）
+.env
+.envrc
+*.pem
+*.key
+secrets/
+private/
+~/.quant-private/
+
+# 数据 — 原始/中间/处理/快照/特征都不入库；只入 reference（小且可审计）
+data/raw/*
+data/interim/*
+data/processed/*
+data/feature_store/*
+data/snapshots/*
+!data/**/.gitkeep
+# 保留 reference 数据
+!data/reference/**
+
+# 报告 — 生成产物，不入源码
+reports/daily/*
+reports/weekly/*
+reports/backtest/*
+reports/strategy_archive/*
+!reports/**/.gitkeep
+
+# 失败案例与 playbook 是手写文档，要入库
+!review/failure_cases/**
+!review/playbooks/**

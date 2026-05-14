@@ -1,0 +1,21 @@
+# 默认参数（与 config/strategy_params/cn_etf_rot_v1.yaml 等价）
+# 策略可独立读这个文件；任何参数变更必须更新两侧并通过 walk-forward。
+
+top_n: 3
+rebalance_freq: "W-FRI"
+mom_windows: [20, 60, 120]
+mom_weights: [0.2, 0.3, 0.5]
+vol_window: 20
+trend_ma_window: 200
+adv_window: 60
+adv_threshold_yuan: 50000000.0
+single_weight_cap: 0.40
+stock_type_cap: 1.00
+cross_border_type_cap: 0.30
+sector_type_cap: 0.50
+commodity_type_cap: 0.20
+weight_method: "equal"
+zscore_clip_sigma: 3.0
+n_capacity_pct: 0.05
+dd_halt_threshold: 0.15
+min_history_days: 252

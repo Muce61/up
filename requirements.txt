@@ -1,0 +1,8 @@
+# 依赖的唯一来源是 pyproject.toml。
+# 本文件仅为兼容入口；任何依赖变更必须改 pyproject.toml，不要改这里。
+#
+# 安装：
+#   pip install -e ".[dev]"     # 标准
+#   uv sync                      # 使用 uv（推荐）
+
+-e .[dev]

@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "up"
+version = "0.0.1"
+description = "Personal quantitative stock research system. Phase 1: A-share ETF/index rotation."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "Personal" }]
+
+# 运行依赖在 Phase 1 期间按需新增。
+# 每次新增依赖必须在 ADR 中说明理由与备选方案（见 docs/engineering_rules.md §1.6）。
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "pre-commit>=3.7",
+    "hypothesis>=6.100",
+]
+
+# src 布局：src/factors/momentum.py 等同 `from factors.momentum import ...`
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["B"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+
+[[tool.mypy.overrides]]
+module = ["akshare.*", "tushare.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "unit: 单元测试",
+    "regression: 跨模块回归测试",
+    "lookahead: 防未来函数测试",
+    "rule_simulation: 交易制度撮合测试",
+    "slow: 慢测试，默认不跑",
+]
+addopts = "-ra --strict-markers"

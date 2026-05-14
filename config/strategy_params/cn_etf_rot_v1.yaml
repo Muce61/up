@@ -1,0 +1,22 @@
+# cn_etf_rot_v1 默认参数
+# 搜索范围见 docs/phase1_etf_rotation_design.md §11。
+# 任何参数变更必须先在 in-sample 搜索 + walk-forward 验证，不允许基于回测曲线主观调整。
+
+top_n: 3
+rebalance_freq: "W-FRI"          # W-FRI / W-WED / M-LAST
+mom_windows: [20, 60, 120]
+mom_weights: [0.2, 0.3, 0.5]      # 对应 mom_20 / mom_60 / mom_120
+vol_window: 20
+trend_ma_window: 200
+adv_window: 60
+adv_threshold_yuan: 50000000.0    # 5000 万元
+single_weight_cap: 0.40
+stock_type_cap: 1.00
+cross_border_type_cap: 0.30
+sector_type_cap: 0.50
+commodity_type_cap: 0.20
+weight_method: "equal"            # equal / inverse_vol
+zscore_clip_sigma: 3.0
+n_capacity_pct: 0.05
+dd_halt_threshold: 0.15
+min_history_days: 252             # 上市满 252 个交易日

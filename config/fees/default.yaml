@@ -1,0 +1,9 @@
+# 费用模型默认配置
+# 任何修改必须更新 docs/backtest_rules.md §5。
+
+commission_rate: 0.00015          # 万 1.5
+min_commission: 5.0               # 元
+stamp_tax_rate: 0.0005            # 万分之 5（仅对印花税适用品种且卖出时收）
+transfer_fee_rate_sh: 0.0         # MVP 简化为 0
+transfer_fee_rate_sz: 0.0
+slippage_bps: 5.0                 # 0.05% 单边
