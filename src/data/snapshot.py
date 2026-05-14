@@ -82,12 +82,11 @@ def build_price_snapshot(
         source_raw_dates.add(raw_file.source_raw_date.strftime("%Y%m%d"))
 
         symbol = _infer_symbol(raw_file.path)
-        raw_df = pd.read_csv(raw_file.path)
+        raw_df = _truncate_raw_rows_after_asof(pd.read_csv(raw_file.path), asof_date=asof_date)
         normalized = normalize_etf_daily(
             raw_df,
             symbol=symbol,
             asof_date=asof_date,
-            truncate_after_asof=True,
         )
         if not normalized.empty:
             frames.append(normalized)
@@ -195,6 +194,15 @@ def _parse_date_part(value: str) -> date | None:
 
 def _infer_symbol(path: Path) -> str:
     return path.stem
+
+
+def _truncate_raw_rows_after_asof(raw: pd.DataFrame, *, asof_date: date) -> pd.DataFrame:
+    """按 AKShare 原始 `日期` 字段做 PIT 预截断。"""
+    if "日期" not in raw.columns:
+        return raw
+    raw_dates = pd.to_datetime(raw["日期"], errors="coerce")
+    visible_mask = raw_dates.apply(lambda value: pd.notna(value) and value.date() <= asof_date)
+    return raw.loc[visible_mask].copy()
 
 
 def _validate_snapshot_prices(prices: pd.DataFrame, *, asof_date: date) -> None:
