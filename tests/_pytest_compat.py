@@ -4,7 +4,7 @@
 - @pytest.fixture(scope="...")
 - @pytest.mark.<name>（仅作标记）
 - @pytest.mark.parametrize(argnames, argvalues)
-- pytest.raises(exc | tuple)
+- pytest.raises(exc | tuple, match=...)（match 为 re.search 语义）
 - pytest.approx(value, rel=, abs=)
 - MonkeyPatch（function-scoped；支持 setattr / chdir / setenv / delenv + 自动回滚）
 
@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 from contextlib import contextmanager
 from typing import Any
 
@@ -75,10 +76,11 @@ mark = _Mark()
 # ---------------------------------------------------------------------------
 
 class _RaisesContext:
-    def __init__(self, exc_types) -> None:
+    def __init__(self, exc_types, match: str | None = None) -> None:
         if not isinstance(exc_types, tuple):
             exc_types = (exc_types,)
         self.exc_types = exc_types
+        self.match = match
         self.value: BaseException | None = None
 
     def __enter__(self):
@@ -89,12 +91,18 @@ class _RaisesContext:
             raise AssertionError(f"Expected exception {self.exc_types}, none raised")
         if not issubclass(exc_type, self.exc_types):
             return False
+        # match 为 re.search 语义（与 pytest 一致）：不命中则视为测试失败
+        if self.match is not None and re.search(self.match, str(exc_value)) is None:
+            raise AssertionError(
+                f"Exception {exc_type.__name__}({exc_value!r}) "
+                f"did not match pattern {self.match!r}"
+            )
         self.value = exc_value
         return True
 
 
-def raises(exc_types):
-    return _RaisesContext(exc_types)
+def raises(exc_types, *, match: str | None = None):
+    return _RaisesContext(exc_types, match=match)
 
 
 # ---------------------------------------------------------------------------

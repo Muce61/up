@@ -216,3 +216,26 @@ P1-W4-03 引入 `data/snapshots/<snapshot_version>/manifest.json`。该 manifest
 - **当前不支持**：AKShare 网络拉取、真实 raw 样例缓存、reference 层生成、Parquet 输出、真实供应商复权口径交叉验证。
 - **架构约束**：不修改策略逻辑、不修改参数、不触碰 Phase 2；该任务只补齐点时点数据快照底座。
 - **晋升状态**：`pending`；该进展不构成策略晋升，也不允许进入模拟盘。
+
+### 2026-05-15 — 测试运行器修复（基础设施）
+
+- **任务**：修复测试运行器，确立真实测试基线（非 task_queue 编号任务，属工程可靠性债）。
+- **背景**：本环境无法访问 PyPI，测试套件依赖 `tests/_pytest_compat.py` 这个最小 pytest shim。`test_walk_forward.py` / `test_akshare_contract.py` / `test_snapshot_pipeline.py` / `test_capacity_edge_cases.py` 等已使用 `pytest.raises(..., match=...)`，但 shim 的 `raises()` 不接受 `match` 关键字，导致整个套件在 `test_walk_forward.py` 处以 `TypeError` 崩溃、**无法跑完**。在修复前，所有"X passed"结论都不可信。
+- **范围**：仅扩展测试基础设施，**不触碰任何 `src/` 逻辑、不碰策略、不碰参数、不碰交易规则**。
+- **新增 / 修改文件**：
+  - `tests/_pytest_compat.py`（`raises()` 增加 `match=` 关键字，`re.search` 语义，与 pytest 一致；不命中即抛 `AssertionError`）
+  - `tests/unit/test_pytest_compat.py`（新增）
+  - `docs/strategy_archive.md`
+- **新增测试**：`tests/unit/test_pytest_compat.py`
+  - `test_raises_catches_expected_exception`
+  - `test_raises_accepts_tuple_of_types`
+  - `test_raises_with_matching_pattern_passes`
+  - `test_raises_with_partial_regex_pattern_passes`
+  - `test_raises_with_nonmatching_pattern_fails`
+  - `test_raises_when_no_exception_fails`
+  - `test_raises_exposes_caught_value`
+- **测试结果**：修复前——套件在 `test_walk_forward.py` 崩溃，无法得到完整基线。修复后——`python3 scripts/run_tests.py` 完整跑完：**`collected 175 test items` → `186 passed, 0 failed`**（186 为 parametrize 展开后的用例数）。这是本仓库**第一个可信的完整测试基线**。
+- **当前支持**：测试套件可在无 PyPI 环境下完整运行；shim 覆盖 `fixture` / `mark` / `parametrize` / `raises(exc|tuple, match=)` / `approx` / `monkeypatch`。
+- **当前不支持**：shim 仍不支持 class-based 测试、conftest 嵌套、`raises` 的 `match` 之外的 pytest 高级特性；真实 pytest 不可用。
+- **架构约束**：本次只补测试基础设施，不改任何被测代码。
+- **晋升状态**：`pending`；**阶段判断不变——系统仍不可靠，不能进入模拟盘，不能进入下一阶段。** 本次修复只是让"能否验证"成为可能，并未让系统变得可信。`docs/phase_summary.md`（2026-05-14）在事实层已过时（walk_forward / snapshot / akshare_adapter 已非 stub、测试数已非 110），但其**总判断仍然成立**，故按"判断未变化则不改 phase_summary"的约定未改动该文件。
