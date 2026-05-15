@@ -2,9 +2,9 @@
 
 生成日期：2026-05-15  
 范围：`docs/roadmap.md`、`docs/task_queue.md`、`docs/strategy_archive.md`、`reports/backtest/`、`tests/`。  
-结论先行：**当前系统仍不可靠，不能进入模拟盘，不能进入 Phase 2，也不能把当前回测结果当成策略有效性证据。**
+结论先行：**当前系统仍不可靠，不能进入模拟盘，不能进入 Phase 2，也不能把当前 fixtures 回测结果当成策略有效性证据。**
 
-说明：本次总结以仓库当前 `master` 文件为准，并结合用户反馈“全量 pytest 已通过”。当前无法确认仓库中已经提交真实 `reports/backtest/{run_id}/` 运行目录；已确认的是报告生成器与归档完整性测试存在。
+说明：本次总结基于仓库当前 `master` 文件，并结合用户反馈“全量 pytest 已通过”。当前仓库中 `reports/backtest/` 只提交了 `.gitkeep`，没有已入库的真实 `reports/backtest/{run_id}/` 运行目录；也就是说，报告生成能力已经有，但真实报告产物没有被纳入仓库审计。
 
 ---
 
@@ -13,9 +13,10 @@
 ### 1.1 工程与测试骨架
 
 - 已建立 `tests/unit`、`tests/regression`、`tests/lookahead`、`tests/rule_simulation` 测试分层。
-- `tests/README.md` 已明确 7 条强制白名单、测试金字塔、fixture 约束、失败处理方式和覆盖率底线。
-- 用户反馈当前全量 `pytest` 已通过；但没有覆盖率报告，不能等价为“系统可靠”。
-- 已有基础可复现回归测试，包括回测结果、报告归档、snapshot、滑点随机订单流、walk-forward 窗口切分等。
+- `tests/README.md` 已定义测试金字塔、7 条强制白名单、fixture 约束、失败处理流程和覆盖率底线。
+- 用户反馈当前全量 `pytest` 已通过；这说明现有断言没有失败，但不等于系统已经可靠。
+- 已有可复现回归测试覆盖：回测结果、报告归档、snapshot、滑点随机订单流、walk-forward 窗口切分等。
+- 测试运行器曾经因 pytest shim 的 `raises(match=...)` 兼容问题导致套件无法完整跑完，后续已修复。这一点很重要：当前“全量通过”的可信度高于此前局部通过结论。
 
 ### 1.2 A 股交易制度与执行基础
 
@@ -30,12 +31,12 @@
   - 印花税方向；
   - 佣金、最低佣金、过户费基础计算。
 - `src/execution/order_model.py` 已实现最小订单模型：市价单、限价单、开盘撮合、拒单、部分成交、容量上限削减。
-- `src/execution/slippage.py` 已实现保守滑点模型：基础 bps、ATR 百分比、订单金额占 ADV 比例、max_bps 封顶。
-- 已新增固定 seed 的 1000 笔随机订单流滑点回归测试，覆盖 buy/sell、不同订单金额、ADV None/0/正数、ATR None/0/正数、max_bps 封顶。
+- `src/execution/slippage.py` 已实现保守滑点模型：基础 bps、ATR 百分比、订单金额占 ADV 比例、`max_bps` 封顶。
+- 已新增固定 seed 的 1000 笔随机订单流滑点回归测试，覆盖 buy/sell、不同订单金额、ADV None/0/正数、ATR None/0/正数、`max_bps` 封顶。
 
 ### 1.3 容量约束与回测引擎 MVP
 
-- `src/portfolio/capacity.py` 已实现 ADV × capacity_pct 的容量上限。
+- `src/portfolio/capacity.py` 已实现 ADV × `capacity_pct` 的容量上限。
 - 已新增容量边界测试，覆盖：
   - `requested_amount = 0`；
   - `adv_amount <= 0`；
@@ -76,13 +77,13 @@
   - `validate_train_before_test()`。
 - `tests/unit/test_walk_forward.py` 已覆盖：
   - 训练区间早于测试区间；
-  - 测试区间按 step 滚动；
+  - 测试区间按 `step_months` 滚动；
   - 测试区间不重叠；
   - 月末边界日期；
   - train/test 泄漏检测；
   - 无效参数报错；
   - 不完整最终测试窗口丢弃。
-- 这只是窗口切分与防泄漏校验，不是完整 walk-forward 回测。
+- 这只是窗口切分与防泄漏校验，不是完整 walk-forward 回测系统。
 
 ### 1.7 报告归档能力已补齐第一版
 
@@ -116,6 +117,7 @@ reports/backtest/{run_id}/
   - `excess_return`
 - `tests/regression/test_backtest_report_archive.py` 已覆盖报告文件完整性、metrics 字段完整性、manifest 文件 hash 与固定 fixture 下归档可复现。
 - 当前 `orders.csv` 复用 trades 输出，因为引擎还没有独立订单生命周期对象；这是 MVP，不是完整订单审计系统。
+- 当前仓库没有提交真实 `reports/backtest/{run_id}/` 目录，只有 `.gitkeep`。因此不能说已有可审计的真实报告产物，只能说“报告生成器和完整性测试已存在”。
 
 ---
 
@@ -161,13 +163,13 @@ reports/backtest/{run_id}/
    - 还没有 fold 级 manifest、metrics 汇总、方向一致性检查。
 
 4. **报告归档和策略归档仍未完全统一。**
-   - `reports/backtest/{run_id}/` 已有结构化目录；
+   - `reports/backtest/{run_id}/` 已有生成器；
    - `docs/strategy_archive.md` 仍描述 `reports/strategy_archive/<strategy_id>/<run_id>/`；
    - 后续需要明确：backtest run 归档与策略晋升归档的关系。
 
-5. **依赖与工程入口仍存在债务。**
-   - roadmap / task_queue 要求 `Makefile`、pre-commit、工具链与依赖矩阵；
-   - 当前是否完全满足这些 W1 退出准则，还没有在本总结中看到确定证据。
+5. **W1 工具链仍可能不完整。**
+   - roadmap / task_queue 要求 Makefile、pre-commit、工具链与依赖矩阵；
+   - 当前总结没有看到这些 W1 退出准则已被完整验证的证据。
 
 这不是小修小补问题，而是“工程回测系统”和“可相信的研究系统”之间的差距。
 
@@ -184,8 +186,8 @@ reports/backtest/{run_id}/
 3. **没有完整 walk-forward。** 没有样本内选参、样本外验证、跨 fold 方向一致性。
 4. **没有参数扰动。** 不知道策略是否对窗口、权重、调仓频率、风险阈值敏感。
 5. **没有因子诊断。** 动量、低波、流动性是否真的有 IC / Rank IC，不清楚。
-6. **没有失败案例归档。** Phase 1 退出要求至少一个失败案例归档；当前仍不应跳过这一步。
-7. **报告现在更像正式成果。** 结构化报告越完整，越容易造成“已经可靠”的错觉；这反而提高了错误决策风险。
+6. **没有失败案例归档闭环。** Phase 1 退出要求至少一个失败案例归档；当前仍不应跳过这一步。
+7. **报告现在更像正式成果。** 结构化报告越完整，越容易造成“已经可靠”的错觉；这反而提高错误决策风险。
 
 结论：当前策略最多只能算工程样例链路，不能用于投资判断。
 
