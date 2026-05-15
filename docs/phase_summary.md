@@ -1,8 +1,10 @@
 # Phase 1 当前阶段总结
 
-生成日期：2026-05-14  
+生成日期：2026-05-15  
 范围：`docs/roadmap.md`、`docs/task_queue.md`、`docs/strategy_archive.md`、`reports/backtest/`、`tests/`。  
-结论先行：**当前系统不可靠，不能进入下一阶段，不能进入模拟盘。**
+结论先行：**当前系统仍不可靠，不能进入模拟盘，不能进入 Phase 2，也不能把当前回测结果当成策略有效性证据。**
+
+说明：本次总结以仓库当前 `master` 文件为准，并结合用户反馈“全量 pytest 已通过”。当前无法确认仓库中已经提交真实 `reports/backtest/{run_id}/` 运行目录；已确认的是报告生成器与归档完整性测试存在。
 
 ---
 
@@ -10,205 +12,304 @@
 
 ### 1.1 工程与测试骨架
 
-- 已有 `pyproject.toml`、`requirements.txt`、`scripts/run_tests.py`。
-- 已建立 `tests/unit`、`tests/regression`、`tests/lookahead`、`tests/rule_simulation` 四类测试目录。
-- 当前 `tests/` 下有 29 个 Python 测试文件。
-- 当前完整测试通过：`149 passed in 10.70s`。
-- 7 条强制白名单相关测试存在并通过：
-  - `test_limit_up_buy_blocked`
-  - `test_limit_down_sell_blocked`
-  - `test_suspended_security_untradeable`
-  - `test_cn_stock_t_plus_one`
-  - `test_fundamental_release_lag_enforced`
-  - `test_delisted_names_survive_history`
-  - `test_no_future_prices_in_signal`
+- 已建立 `tests/unit`、`tests/regression`、`tests/lookahead`、`tests/rule_simulation` 测试分层。
+- `tests/README.md` 已明确 7 条强制白名单、测试金字塔、fixture 约束、失败处理方式和覆盖率底线。
+- 用户反馈当前全量 `pytest` 已通过；但没有覆盖率报告，不能等价为“系统可靠”。
+- 已有基础可复现回归测试，包括回测结果、报告归档、snapshot、滑点随机订单流、walk-forward 窗口切分等。
 
-### 1.2 A 股交易规则与执行基础
+### 1.2 A 股交易制度与执行基础
 
-- `src/backtest/market_rules_cn.py` 已作为交易制度定义点。
+- `src/backtest/market_rules_cn.py` 已作为 A 股交易制度定义点。
 - `src/execution/tradeability.py` 已作为交易规则访问入口。
-- 已有基础规则测试覆盖涨停买入拒绝、跌停卖出拒绝、停牌不可交易、退市不可交易、T+1 / T+0 分类。
-- `src/execution/fee_model.py` 已实现佣金、最低佣金、印花税、过户费计算。
-- `src/execution/order_model.py` 已实现最小订单模型：市价、限价、开盘撮合、部分成交、容量上限拒绝/削减。
-- `src/execution/slippage.py` 已实现滑点 MVP：基础 bps、ATR 百分比、订单金额占 ADV 比例三部分估算，并已接入 `src/backtest/engine.py` 的成交价计算。
-- `src/backtest/engine.py` 的成交执行路径已接入 `src/execution/order_model.py`，不再由引擎独立完成涨跌停、停牌、退市等订单状态判断。
-- `src/portfolio/capacity.py` 已实现 ADV × N 容量约束 MVP，并已接入 `src/backtest/engine.py` 的订单执行路径。
-- `src/backtest/engine.py` 已将持仓估值、目标仓位现值与成交金额口径统一到 `price × adj_factor`，并新增复权跳变回归测试。
-- `src/data/akshare_adapter.py` 已实现 AKShare ETF 日线字段本地标准化与基础合法性校验，并新增 `tests/regression/test_akshare_contract.py` 锁定字段口径。
+- 已覆盖并测试的基础交易制度包括：
+  - 涨停买入拒绝；
+  - 跌停卖出拒绝；
+  - 停牌不可交易；
+  - 退市不可交易；
+  - ETF T+1 / T+0 分类；
+  - 印花税方向；
+  - 佣金、最低佣金、过户费基础计算。
+- `src/execution/order_model.py` 已实现最小订单模型：市价单、限价单、开盘撮合、拒单、部分成交、容量上限削减。
+- `src/execution/slippage.py` 已实现保守滑点模型：基础 bps、ATR 百分比、订单金额占 ADV 比例、max_bps 封顶。
+- 已新增固定 seed 的 1000 笔随机订单流滑点回归测试，覆盖 buy/sell、不同订单金额、ADV None/0/正数、ATR None/0/正数、max_bps 封顶。
 
-### 1.3 ETF 轮动 MVP 主链路
+### 1.3 容量约束与回测引擎 MVP
 
-- 已有 ETF master 配置：`config/universe/etf_pool.yaml`。
-- 已有数据加载器：`src/data/etf_loader.py`，支持 master、行情、日历加载与 PIT 截断。
-- 已有 ETF 因子：
-  - `src/factors/momentum.py`
-  - `src/factors/volatility.py`
-  - `src/factors/liquidity.py`
-- Phase 2 因子仍为锁定状态，导入即抛 `NotImplementedError`。
-- 已有策略信号：`src/strategies/etf_rotation/cn_etf_rot_v1/signal.py`。
-- 已有参数文件：`src/strategies/etf_rotation/cn_etf_rot_v1/params.yaml` 与 `config/strategy_params/cn_etf_rot_v1.yaml`。
-- 已有策略卡片：`src/strategies/etf_rotation/cn_etf_rot_v1/README.md`。
-- 已有最小事件循环回测引擎：`src/backtest/engine.py`。
-- 已有报告生成器：`src/reports/backtest_report.py`。
+- `src/portfolio/capacity.py` 已实现 ADV × capacity_pct 的容量上限。
+- 已新增容量边界测试，覆盖：
+  - `requested_amount = 0`；
+  - `adv_amount <= 0`；
+  - `capacity_pct = 0`；
+  - `requested_amount <= limit`；
+  - `requested_amount > limit`；
+  - `capacity_pct < 0` 报错。
+- `src/backtest/engine.py` 已能跑 fixtures 下的日级事件循环回测。
+- 回测执行路径已接入订单模型、费用模型、滑点模型、容量约束。
+- 回测估值、目标仓位现值和成交金额已统一到 `price × adj_factor`，并已有复权一致性回归测试。
 
-### 1.4 已有审查与展示产物
+### 1.4 数据契约与点时点快照底座
 
-- 已生成严格回测审查：`reports/backtest/etf_rotation_review.md`。
-- 已生成本地网页报告：`reports/backtest/index.html`。
-- `docs/strategy_archive.md` 已记录 `P1-W3-02 订单模型 MVP`、`P1-W3-03 滑点模型 MVP`、回测引擎接入订单模型、`P1-W8-03 容量约束 MVP` 与 `P1-W6-03 复权一致性回归` 阶段进展。
+- `src/data/akshare_adapter.py` 已实现 AKShare ETF 日线字段标准化。
+- `tests/regression/test_akshare_contract.py` 已锁定本地 AKShare 样例字段契约。
+- `src/data/snapshot.py` 已实现从本地 raw CSV 生成 snapshot 的 MVP：
+  - 支持 `data/raw/{date}/`；
+  - 兼容 `data/raw/{vendor}/{date}/`；
+  - 输出 `data/snapshots/{snapshot_version}/prices_daily.csv`；
+  - 输出 `manifest.json`；
+  - 按 `asof_date` 截断，禁止未来行情进入 snapshot；
+  - 记录输入文件、文件 hash、schema version、行数、日期范围。
+- `tests/regression/test_snapshot_pipeline.py` 已覆盖 manifest 存在、连续生成 hash 一致、PIT 截断、缺字段报错、输出字段符合数据契约。
+
+### 1.5 因子、信号与 Phase 2 锁定
+
+- Phase 1 ETF 轮动相关因子已存在：动量、波动率 / 低波、流动性。
+- 已有 ETF 轮动策略信号 `cn_etf_rot_v1`，并有相关 lookahead / signal 测试。
+- Phase 2 因子仍处于锁定状态，不应在当前阶段实现或使用。
+- 当前策略参数没有因为测试或收益表现被优化，这一点是正确的。
+
+### 1.6 Walk-forward 框架的第一层已完成
+
+- `src/backtest/walk_forward.py` 已实现：
+  - `WalkForwardWindow`；
+  - `generate_walk_forward_windows()`；
+  - `validate_no_overlap()`；
+  - `validate_train_before_test()`。
+- `tests/unit/test_walk_forward.py` 已覆盖：
+  - 训练区间早于测试区间；
+  - 测试区间按 step 滚动；
+  - 测试区间不重叠；
+  - 月末边界日期；
+  - train/test 泄漏检测；
+  - 无效参数报错；
+  - 不完整最终测试窗口丢弃。
+- 这只是窗口切分与防泄漏校验，不是完整 walk-forward 回测。
+
+### 1.7 报告归档能力已补齐第一版
+
+- `src/reports/backtest_report.py` 已能生成结构化回测归档目录：
+
+```text
+reports/backtest/{run_id}/
+  ├─ manifest.json
+  ├─ metrics.json
+  ├─ equity_curve.csv
+  ├─ trades.csv
+  ├─ holdings.csv
+  ├─ orders.csv
+  └─ report.md
+```
+
+- `metrics.json` 已包含必报指标：
+  - `total_return`
+  - `annualized_return`
+  - `max_drawdown`
+  - `sharpe`
+  - `sortino`
+  - `calmar`
+  - `win_rate`
+  - `profit_loss_ratio`
+  - `turnover`
+  - `trade_count`
+  - `monthly_returns`
+  - `drawdown_duration`
+  - `benchmark_return`
+  - `excess_return`
+- `tests/regression/test_backtest_report_archive.py` 已覆盖报告文件完整性、metrics 字段完整性、manifest 文件 hash 与固定 fixture 下归档可复现。
+- 当前 `orders.csv` 复用 trades 输出，因为引擎还没有独立订单生命周期对象；这是 MVP，不是完整订单审计系统。
 
 ---
 
 ## 2. 当前系统还不能做什么
 
-当前系统不能被视为可用于真实研究结论，更不能用于模拟盘或实盘。
+当前系统仍不能被视为可靠量化研究系统。
 
 明确不能做的事：
 
-- 不能基于真实 A 股 ETF 快照做正式回测，因为 `data/snapshots/<snapshot_version>/` 流水线尚未落地。
-- 不能保证真实数据字段口径完整正确；AKShare ETF 日线字段契约已有本地回归测试，但 AKShare 网络拉取、raw/reference/snapshot 流水线和真实样例缓存尚未完成。
-- 不能输出 Phase 1 合格的完整策略报告，因为报告层还缺少正式归档的 `metrics.json`、`equity_curve`、`trades`、`holdings` 与因子诊断。
-- 不能做正式样本内 / 样本外 / walk-forward 结论，因为 `src/backtest/walk_forward.py` 仍是 stub。
-- 不能声称已满足真实交易制度，因为容量约束仍只是 MVP，尚未做真实快照字段校验、跨订单共享单日容量、组合层预削权；滑点模型也未用真实滚动 ATR / 真实 ADV 快照验证，且订单模型仍未处理涨跌停价内成交价封顶和跨 bar 顺延。
-- 不能进入模拟盘，因为 Phase 1 晋升门禁远未满足。
-- 不能开启 Phase 2 行业轮动、多因子选股或事件驱动。
-- 不能为了提高结果修改策略参数；当前参数没有经过正式 in-sample 与 walk-forward 决策。
+1. **不能进入模拟盘。** 还没有 W11 的 paper-trade broker、执行偏差度量、模拟盘启动检查脚本。
+2. **不能进入 Phase 2。** 行业轮动、多因子选股、事件驱动仍必须暂缓。
+3. **不能做正式真实市场结论。** 当前主链路仍主要依赖 fixtures 和本地样例测试，不是经过真实 A 股 ETF 全量点时点数据验证的结果。
+4. **不能声称 walk-forward 已完成。** 当前只完成窗口切分和防泄漏校验，没有实际执行每个 fold 的训练、测试、汇总和一致性判断。
+5. **不能声称参数稳健。** P1-W9-02 参数扰动尚未完成，也没有 ±20% 参数扰动矩阵。
+6. **不能声称报告层完整到 Phase 1 退出标准。** P1-W10-01 的结构化归档已经有了，但 P1-W10-02 因子诊断没有完成，IC / Rank IC / 分层收益 / 因子相关矩阵仍缺失。
+7. **不能保证真实数据源可靠。** AKShare 适配器和 snapshot 流水线是本地文件级 MVP，不等于 AKShare 网络拉取、真实样例缓存、字段漂移监控、供应商复权口径交叉验证已经完成。
+8. **不能做正式基准比较。** `benchmark_return` 当前在报告生成器中默认是 `0.0`，还没有真实 benchmark 曲线接入。
+9. **不能完整审计订单生命周期。** `orders.csv` 当前复用 `trades`，没有独立记录 signal → target → order → execution → reject / fill 的完整生命周期。
+10. **不能处理更真实的交易细节。** 例如最小交易单位细节、涨跌停价内成交价封顶、跨 bar 顺延、单日跨订单共享容量、组合层预削权等仍未完善。
 
 ---
 
 ## 3. 当前最大技术债是什么
 
-最大技术债：**回测引擎仍不是一个可信的 A 股 ETF 回测引擎**。
+最大技术债：**系统已经能产出看起来完整的回测与报告，但真实数据、真实执行、真实 walk-forward 还没有闭环。**
 
-具体表现：
+具体拆开看：
 
-1. 数据快照流水线 `src/data/snapshot.py` 仍是 stub；AKShare 适配器已有本地字段标准化，但尚未联网拉取、raw 落地或生成 snapshot。
-2. 真实供应商复权因子口径尚未交叉校验；虽然合成复权跳变已被回归测试锁住，AKShare 原始 `复权因子` 字段也已有契约测试，但仍缺真实快照样例与供应商口径验证。
-3. `src/portfolio/capacity.py` 虽已不再是 stub，但仍只是 MVP：当前按历史成交额估算滚动 ADV，尚未验证真实快照字段、跨订单共享单日容量和组合层预削权。
-4. `src/execution/slippage.py` 虽已不再是 stub，但仍只是 MVP：ATR 由当日 high/low/close 近似或直接字段读取，未建立真实滚动 ATR 特征，也没有真实快照下的滑点回归测试。
-5. `src/execution/order_model.py` 已接入引擎，但仍未处理最小交易单位、涨跌停价内成交价封顶、跨 bar 顺延和真实快照下的成交回归。
+1. **真实数据链路没有闭环。**
+   - 已有 AKShare adapter 和 snapshot MVP；
+   - 但缺少 AKShare 网络拉取脚本、真实 raw 样例缓存、reference 层、真实交易日历、真实 ETF master、真实快照生成记录。
 
-这不是“细节未完善”，而是核心可信度缺口。只要这些问题存在，任何收益率都不能作为策略有效证据。
+2. **真实执行模型仍是 MVP。**
+   - 订单、滑点、费用、容量都已经有基础模块；
+   - 但没有真实快照下的成交端到端回归；
+   - 没有跨订单共享容量；
+   - 没有组合层容量预削权；
+   - 没有更完整的订单生命周期。
+
+3. **Walk-forward 只有窗口，没有回测编排。**
+   - 当前能生成 train/test 窗口并防泄漏；
+   - 但还不能自动对每个 fold 跑回测；
+   - 还没有 fold 级 manifest、metrics 汇总、方向一致性检查。
+
+4. **报告归档和策略归档仍未完全统一。**
+   - `reports/backtest/{run_id}/` 已有结构化目录；
+   - `docs/strategy_archive.md` 仍描述 `reports/strategy_archive/<strategy_id>/<run_id>/`；
+   - 后续需要明确：backtest run 归档与策略晋升归档的关系。
+
+5. **依赖与工程入口仍存在债务。**
+   - roadmap / task_queue 要求 `Makefile`、pre-commit、工具链与依赖矩阵；
+   - 当前是否完全满足这些 W1 退出准则，还没有在本总结中看到确定证据。
+
+这不是小修小补问题，而是“工程回测系统”和“可相信的研究系统”之间的差距。
 
 ---
 
 ## 4. 当前最大策略风险是什么
 
-最大策略风险：**策略尚未经过真实、点时点、全交易制度约束下的稳健性验证，但已经能产出看起来完整的回测页面和指标**。
+最大策略风险：**把 fixtures 或本地样例下能跑通的 ETF 轮动链路，误认为已经有策略有效性。**
 
-这很危险，因为容易让人误以为系统已经可靠。
+当前策略链路的风险点：
 
-来自 `reports/backtest/etf_rotation_review.md` 的现有 fixtures 审查结果本身也不合格：
+1. **没有真实点时点数据验证。** fixtures 只能验证工程行为，不能证明市场有效性。
+2. **没有真实 benchmark 曲线。** `benchmark_return = 0.0` 只能作为占位，不能证明超额收益。
+3. **没有完整 walk-forward。** 没有样本内选参、样本外验证、跨 fold 方向一致性。
+4. **没有参数扰动。** 不知道策略是否对窗口、权重、调仓频率、风险阈值敏感。
+5. **没有因子诊断。** 动量、低波、流动性是否真的有 IC / Rank IC，不清楚。
+6. **没有失败案例归档。** Phase 1 退出要求至少一个失败案例归档；当前仍不应跳过这一步。
+7. **报告现在更像正式成果。** 结构化报告越完整，越容易造成“已经可靠”的错觉；这反而提高了错误决策风险。
 
-- 年化收益：`-36.76%`
-- 最大回撤：`-52.85%`
-- Sharpe：`-0.6745`
-- 相对等权基准总收益：`-69.39%`
-- 样本内与样本外方向均为负
-- walk-forward 未实现
-
-这些结果来自合成 fixtures，不代表真实市场表现。但即便在 fixtures 上，当前策略链路也暴露了高回撤、尾部月份损失和相对基准显著落后的问题。
+结论：当前策略最多只能算工程样例链路，不能用于投资判断。
 
 ---
 
 ## 5. 当前测试覆盖是否足够
 
-结论：**不够。当前测试数量不少，但覆盖不足以证明系统可靠。**
+结论：**不够。当前测试覆盖比之前明显更强，但仍不足以证明系统可靠。**
 
-已经覆盖的部分：
+已经比较好的部分：
 
-- 基础交易规则：涨跌停、停牌、T+1 / T+0、退市不可交易。
-- 基础费用模型：最低佣金、印花税方向、成本合计。
-- 基础滑点模型：基础 bps、ATR 百分比、ADV 参与率、买卖方向、确定性输出。
-- 基础容量约束：ADV × N 上限、超限部分成交、0 ADV 保守拒绝、引擎成交金额削减。
-- 复权一致性：动量因子使用复权收盘价；回测估值和成交金额使用 `price × adj_factor`；合成复权跳变下权益不再断崖。
-- 引擎成交路径：调用 `order_model.execute_order`、涨停买入拒绝、跌停卖出拒绝、停牌拒绝、T+1、费用、滑点和可复现性。
-- 因子防未来函数：动量、趋势、波动率、最大回撤。
-- 信号防未来函数：污染未来价格后信号不变。
-- 回测可复现：fixtures 下关键输出一致。
-- 报告生成：Markdown / HTML 报告文件可生成。
-- Phase 2 因子锁定：部分 lookahead 测试覆盖。
+- 交易制度基础测试：涨跌停、停牌、T+1 / T+0、退市不可交易。
+- 费用模型基础测试：佣金、最低佣金、印花税方向、成本合计。
+- 滑点模型测试：单元测试 + 固定 seed 1000 笔随机订单流回归。
+- 容量约束测试：基础单元测试 + 边界测试。
+- AKShare 字段契约测试：本地样例字段、日期、价格、成交额、复权因子、PIT 边界。
+- Snapshot 测试：manifest、hash 可复现、asof 截断、缺字段报错、字段契约。
+- Walk-forward 测试：窗口切分、防泄漏、测试窗口重叠、无效参数。
+- 报告归档测试：必需文件、必报指标、文件 hash、固定 fixture 可复现。
+- Phase 2 锁定测试：避免 Phase 2 因子误用。
 
-不足的部分：
+仍不足的部分：
 
-- 已新增 AKShare ETF 日线字段口径回归测试，但只覆盖本地样例，不覆盖真实网络响应和快照版本化。
-- 复权一致性已有合成跳变回归测试，AKShare `复权因子` 必填和正值契约已覆盖；仍没有真实供应商复权口径交叉验证。
-- 容量约束已有单元和引擎接入测试，但没有真实快照字段回归、跨订单共享容量测试、组合层预削权测试。
-- 滑点测试仍限于单元测试和引擎调用路径，没有 1000 笔随机订单流回归测试，也没有真实快照下校验。
-- 订单模型接入引擎已有单元级覆盖，但没有真实快照下的成交端到端回归。
-- 没有 walk-forward 切分和防泄漏测试。
-- 没有正式基准收益与相对收益测试。
-- 没有报告完整性覆盖所有 `CLAUDE.md §4` 必报指标。
-- 测试没有覆盖率报告；无法确认 `backtest/`、`execution/`、`factors/`、`portfolio/` 行覆盖是否达到 `tests/README.md` 要求的 85%。
+1. **没有覆盖率报告。** 无法确认 `backtest/`、`execution/`、`factors/`、`portfolio/` 是否达到测试规范里的行覆盖 ≥ 85%、分支覆盖 ≥ 70%。
+2. **没有真实网络数据契约测试。** 当前 AKShare 只测本地样例，不测真实响应字段漂移。
+3. **没有真实 raw/reference/snapshot 端到端样例。** 还没看到真实 `data/raw` → `data/snapshots` → 回测的完整 fixtures。
+4. **没有真实 benchmark 测试。** 相对收益、超额收益和信息比率相关测试不足。
+5. **没有 walk-forward 回测测试。** 只有窗口，不跑 fold。
+6. **没有参数扰动测试。** P1-W9-02 未完成。
+7. **没有因子诊断测试。** P1-W10-02 未完成。
+8. **没有 paper-trade / 执行偏差测试。** W11 未开始。
+9. **没有完整订单生命周期测试。** 当前 orders 与 trades 没有分离。
+10. **没有真实市场极端情形测试。** 连续涨跌停、长期停牌、流动性枯竭、退市整理期、复权异常、成交额缺失等仍需要更强测试。
 
-所以，`110 passed` 只能说明“当前已有断言通过”，不能说明“系统已经可信”。
+所以：全量测试通过只能说明“当前断言下没有失败”，不能说明“研究结论可信”。
 
 ---
 
 ## 6. 是否可以进入下一阶段
 
-结论：**不可以。**
+结论：**不可以进入 Phase 2，不可以进入模拟盘，不可以进入 Phase 1 退出评审。**
+
+可以继续推进的，只是 Phase 1 内部的未完成工程任务。
 
 不能进入下一阶段的原因：
 
-1. W3 未完成：滑点模型已有 MVP，但尚未满足任务队列要求的 1000 笔随机订单流回归测试；费用模型也未达到任务队列要求的完整边界测试数量；订单模型虽然已接入回测引擎，但尚未覆盖真实快照成交回归。
-2. W4 未完成：AKShare 适配器、原始层、reference 层、snapshot 流水线都未完成。
-3. W6 只能算 MVP：引擎可跑 fixtures，复权跳变已有合成回归，但仍未满足真实快照、完整订单/滑点/容量回归。
-4. W8 未完成：容量约束已有 MVP，但组合优化、风险预算、组合层预削权仍未完成。
-5. W9 未完成：walk-forward 仍是 stub。
-6. W10 未完成：报告层不是完整必报指标面板，因子诊断未实现。
-7. W11 / W12 完全不能启动：模拟盘接口、执行偏差度量、Phase 1 评审与封存条件都未满足。
+1. W4 仍未完整完成：AKShare 网络拉取、真实 raw 落地、reference 层、真实快照样例仍缺。
+2. W8 仍未完整完成：组合优化器、风险预算、组合层容量预削权仍缺。
+3. W9 只完成了 W9-01 的窗口切分，W9-02 参数扰动和真实 walk-forward 回测编排未完成。
+4. W10 只完成了 W10-01 的结构化报告归档，W10-02 因子诊断未完成。
+5. W11 完全不能启动：paper-trade、broker adapter、执行偏差度量都未完成。
+6. W12 完全不能启动：没有 Phase 1 评审报告、没有 ADR-0002、没有策略封存、没有失败案例归档闭环。
 
-当前最多处于：**Phase 1 早期 MVP 骨架阶段**。不能进入模拟盘，不能进入 Phase 2，也不能把当前回测当作策略有效性证明。
+当前状态：**Phase 1 中段工程骨架增强版**。还不是可晋升系统。
 
 ---
 
 ## 7. 下一阶段建议做什么
 
-下一阶段不应做新策略，而应补齐回测可信度底座。
+下一步不要开发新策略，不要改参数，不要做收益优化。建议按以下顺序补齐底座：
 
-优先级建议：
+### 7.1 优先补真实数据链路
 
-1. **补齐真实快照前的数据契约与字段测试**
-   - 推进 AKShare 字段口径回归测试。
-   - 明确行情字段、复权字段、ADV / ATR 字段来源。
+- 完成 `scripts/fetch_akshare.py` 或等价 raw 拉取入口。
+- 固定一小段真实 ETF raw 样例，入 `tests/fixtures` 或受控缓存。
+- 完成 reference 层：交易日历、ETF master、退市档案。
+- 用真实 raw 样例跑一次 `data/raw` → `data/snapshots` → 回测的端到端测试。
 
-2. **补齐滑点、订单和容量回归测试**
-   - 对 `src/execution/slippage.py` 增加固定 seed 的 1000 笔随机订单流回归测试。
-   - 增加跨订单共享容量、真实 ADV / ATR 字段校验、`order_model` 成交路径回归。
+### 7.2 补 walk-forward 回测编排，但不做自由调参
 
-3. **推进 W4 数据底座**
-   - 完成 AKShare 适配器、raw/reference/snapshot 结构。
-   - 生成第一个可追踪 `snapshot_version`。
-   - 增加字段口径回归测试。
+- 在 `generate_walk_forward_windows()` 之上增加 fold runner。
+- 每个 fold 输出独立 metrics。
+- 检查 train/test 时间边界。
+- 先用固定参数跑，不做自动选参。
+- 后续再做 P1-W9-02 参数扰动。
 
-4. **扩展报告指标**
-   - 在报告层内置胜率、盈亏比、月度收益、回撤持续时间、相对基准收益、信息比率。
-   - 不要依赖临时审查脚本手算指标。
+### 7.3 补真实 benchmark 与报告指标
+
+- 增加 benchmark 曲线输入。
+- 计算 `benchmark_return`、`excess_return`、信息比率。
+- 报告中明确 benchmark 名称、来源、snapshot_version。
+- 不要继续使用默认 `benchmark_return = 0.0` 作为正式报告。
+
+### 7.4 补因子诊断
+
+- 实现 P1-W10-02：IC、Rank IC、分层收益、相关矩阵。
+- 用 fixture 做可复现测试。
+- 先验证因子是否有方向，再谈策略晋升。
+
+### 7.5 补订单生命周期与执行偏差前置能力
+
+- 区分 signal、target、order、trade。
+- `orders.csv` 不应长期复用 `trades.csv`。
+- 加入订单未成交原因聚合。
+- 为 W11 paper-trade 做数据结构准备。
 
 ---
 
 ## 8. 哪些任务必须暂缓
 
-必须暂缓的任务：
+必须暂缓：
 
 - **任何新策略开发**：包括新 ETF 策略、行业轮动、多因子选股、事件驱动。
-- **任何参数优化**：当前不能因为 fixtures 上某个参数更好而改参数。
-- **任何模拟盘相关代码**：W11 只能在 W1-W10 基础合格后再讨论。
+- **任何参数优化**：不能因为 fixtures 或小样本结果不好看就改窗口、权重、阈值。
+- **任何 Phase 2 因子实现**：value、quality、growth、dividend、event_features 继续锁定。
+- **任何模拟盘代码**：W11 前置条件远未满足。
 - **任何实盘下单代码**：当前严禁。
-- **Phase 2 因子实现**：`value`、`quality`、`growth`、`dividend`、`event_features` 必须继续锁定。
-- **基于当前 fixtures 的策略晋升讨论**：fixtures 只能用于工程测试，不能用于投资研究结论。
-- **报告美化优先事项**：在数据、滑点、容量、walk-forward 未完成前，继续美化页面没有研究价值。
-- **W12 阶段评审与封存**：当前不具备 Phase 1 退出评审条件。
+- **任何策略晋升结论**：当前没有完整真实数据、walk-forward、参数扰动、因子诊断，不允许谈晋升。
+- **任何“收益美化”工作**：例如调参、换 benchmark、删失败窗口、隐藏回撤。
+- **报告页面美化优先事项**：在真实数据链路和稳健性验证完成前，继续美化页面价值很低。
+- **Phase 1 退出评审**：W10-02、W11、W12 缺失，不能启动退出评审。
 
 ---
 
 ## 最终判断
 
-当前项目已经有一个能跑通的 ETF 轮动研究骨架，但它还不是可靠的量化研究系统。
+当前项目已经从“能跑的 ETF 轮动骨架”进化到“有较多工程护栏的研究系统雏形”。
 
-系统当前最大的价值是：规则边界、测试框架、信号链路和报告链路已经初步搭起来。
+但它仍然不可靠。核心原因不是测试没过，而是：
 
-系统当前最大的限制是：真实点时点数据、真实交易制度关键约束、稳健性验证和完整报告指标都没有完成。
+- 真实数据链路没有闭环；
+- walk-forward 没有真正跑起来；
+- benchmark 与因子诊断缺失；
+- 订单与执行模型仍是 MVP；
+- 没有模拟盘和执行偏差验证。
 
-因此，当前阶段的正确动作不是扩张策略，而是补齐底座；否则后续任何收益曲线都可能是工程假象。
+下一步正确方向是继续补底座，而不是扩策略、调参数、讲收益。
