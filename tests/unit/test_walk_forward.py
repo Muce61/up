@@ -102,8 +102,8 @@ def test_validate_no_overlap_rejects_overlapping_test_windows() -> None:
             index=0,
         ),
         WalkForwardWindow(
-            train_start=date(2020, 4, 1),
-            train_end=date(2021, 3, 31),
+            train_start=date(2020, 1, 1),
+            train_end=date(2021, 2, 28),
             test_start=date(2021, 3, 1),
             test_end=date(2021, 5, 31),
             index=1,
