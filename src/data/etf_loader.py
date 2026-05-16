@@ -95,6 +95,35 @@ def load_prices(snapshot_path: str | Path, symbols: list[str] | None = None) -> 
     return df[PRICE_COLUMNS].reset_index(drop=True)
 
 
+def derive_calendar_from_prices(prices: pd.DataFrame) -> pd.DataFrame:
+    """Derive a minimal trading calendar from snapshot prices.
+
+    This is a Phase 1 stopgap for end-to-end pipeline validation when a snapshot
+    does not yet include a reference-layer trading calendar. It only uses
+    `trade_date` values already present in PIT snapshot prices and does not infer
+    future sessions.
+    """
+    if prices is None or prices.empty:
+        raise ValueError("prices must not be empty")
+    if "trade_date" not in prices.columns:
+        raise ValueError("prices must include trade_date")
+
+    trade_dates = sorted(set(_to_date(prices["trade_date"]).dropna().tolist()))
+    if not trade_dates:
+        raise ValueError("prices must contain at least one valid trade_date")
+
+    calendar = pd.DataFrame(
+        {
+            "trade_date": trade_dates,
+            "is_open": [True] * len(trade_dates),
+            "prev_trade_date": [None, *trade_dates[:-1]],
+            "next_trade_date": [*trade_dates[1:], None],
+        },
+        columns=CALENDAR_COLUMNS,
+    )
+    return calendar.reset_index(drop=True)
+
+
 def load_calendar(snapshot_path: str | Path) -> pd.DataFrame:
     """从快照目录或单文件加载交易日历。"""
     path = Path(snapshot_path)

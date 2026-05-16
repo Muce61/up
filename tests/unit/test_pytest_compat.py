@@ -1,3 +1,4 @@
+# ruff: noqa: RUF002, RUF003
 """测试基础设施自检：_pytest_compat shim 的 raises() 行为。
 
 为什么需要它：项目无法访问 PyPI，测试套件依赖 tests/_pytest_compat.py 这个
@@ -7,6 +8,11 @@
 from __future__ import annotations
 
 import pytest
+
+
+def _is_raises_failure(exc: BaseException) -> bool:
+    """Support both the local shim and real pytest's Failed outcome type."""
+    return isinstance(exc, AssertionError) or exc.__class__.__name__ == "Failed"
 
 
 @pytest.mark.unit
@@ -41,8 +47,8 @@ def test_raises_with_nonmatching_pattern_fails() -> None:
     try:
         with pytest.raises(ValueError, match="this will not be found"):
             raise ValueError("completely different message")
-    except AssertionError:
-        raised_assertion = True
+    except BaseException as exc:
+        raised_assertion = _is_raises_failure(exc)
     assert raised_assertion, "match 不命中时 raises() 必须抛 AssertionError"
 
 
@@ -52,8 +58,8 @@ def test_raises_when_no_exception_fails() -> None:
     try:
         with pytest.raises(ValueError):
             pass  # 不抛异常
-    except AssertionError:
-        raised_assertion = True
+    except BaseException as exc:
+        raised_assertion = _is_raises_failure(exc)
     assert raised_assertion, "未抛出预期异常时 raises() 必须抛 AssertionError"
 
 
