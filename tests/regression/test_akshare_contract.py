@@ -1,8 +1,9 @@
+# ruff: noqa: E402
 from __future__ import annotations
 
+import sys
 from datetime import date
 from pathlib import Path
-import sys
 
 import pandas as pd
 import pytest
@@ -11,8 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.data.akshare_adapter import normalize_etf_daily
-
+from src.data.akshare_adapter import normalize_etf_daily, write_raw_etf_daily_csv
 
 REQUIRED_COLUMNS = {
     "symbol",
@@ -107,3 +107,27 @@ def test_normalize_etf_daily_enforces_pit_asof_boundary() -> None:
 
     with pytest.raises(ValueError, match="effective_date must be <= asof_date"):
         normalize_etf_daily(raw, symbol="510300.SH", asof_date=date(2026, 5, 11))
+
+
+def test_write_raw_etf_daily_csv_is_immutable_and_hashable(tmp_path: Path) -> None:
+    raw = _raw_akshare_etf_daily()
+
+    first = write_raw_etf_daily_csv(
+        raw,
+        raw_root=tmp_path / "data" / "raw",
+        symbol="510300.SH",
+        asof_date=date(2026, 5, 12),
+    )
+
+    assert first.path.relative_to(tmp_path).as_posix() == "data/raw/akshare/20260512/510300.SH.csv"
+    assert first.row_count == 2
+    assert len(first.sha256) == 64
+    assert first.path.exists()
+
+    with pytest.raises(FileExistsError, match="must not be overwritten"):
+        write_raw_etf_daily_csv(
+            raw,
+            raw_root=tmp_path / "data" / "raw",
+            symbol="510300.SH",
+            asof_date=date(2026, 5, 12),
+        )
