@@ -163,6 +163,13 @@ def test_snapshot_output_columns_match_data_contract(tmp_path: Path) -> None:
     assert prices.columns.tolist() == PRICE_COLUMNS
 
 
+def test_snapshot_source_has_single_reference_loader() -> None:
+    source = (REPO_ROOT / "src" / "data" / "snapshot.py").read_text(encoding="utf-8")
+
+    assert source.count("def _load_reference_outputs(") == 1
+    assert source.count("def _snapshot_reference_filename(") == 1
+
+
 def _write_reference_csv(reference_root: Path) -> None:
     reference_root.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(
