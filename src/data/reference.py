@@ -1,3 +1,4 @@
+# ruff: noqa: RUF002
 """Reference layer schema 与 PIT 校验。
 
 P1 Step 1 只冻结真实数据链路需要的最小 reference 契约：
@@ -10,6 +11,7 @@ P1 Step 1 只冻结真实数据链路需要的最小 reference 契约：
 from __future__ import annotations
 
 from datetime import date, datetime
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -25,6 +27,8 @@ VALID_ETF_TYPES = {
 VALID_SETTLEMENTS = {"T+0", "T+1"}
 VALID_EXCHANGES = {"SH", "SZ", "BJ"}
 VALID_MARKETS = {"SH", "SZ", "BJ"}
+BOOL_TRUTHY = {"true", "1", "yes", "y"}
+BOOL_FALSY = {"false", "0", "no", "n", ""}
 
 TRADING_CALENDAR_COLUMNS = [
     "trade_date",
@@ -46,6 +50,24 @@ ETF_MASTER_COLUMNS = [
     "exchange",
     "effective_date",
 ]
+
+
+def load_trading_calendar(path: str | Path, *, asof_date: date) -> pd.DataFrame:
+    """从 CSV 加载 trading_calendar，并按 asof_date 返回 PIT 可见日历。"""
+    df = _read_csv(path, table="trading_calendar")
+    _convert_date_columns(
+        df, ["trade_date", "prev_trade_date", "next_trade_date", "effective_date"]
+    )
+    _convert_bool_columns(df, ["is_open"])
+    return filter_visible_trading_calendar(df, asof_date=asof_date)
+
+
+def load_etf_master(path: str | Path, *, asof_date: date) -> pd.DataFrame:
+    """从 CSV 加载 etf_master，并按 asof_date 返回 PIT 可见主数据。"""
+    df = _read_csv(path, table="etf_master")
+    _convert_date_columns(df, ["list_date", "delist_date", "effective_date"])
+    _convert_bool_columns(df, ["stamp_tax_applicable"])
+    return filter_visible_etf_master(df, asof_date=asof_date)
 
 
 def validate_trading_calendar(df: pd.DataFrame, *, asof_date: date | None = None) -> pd.DataFrame:
@@ -70,7 +92,7 @@ def validate_trading_calendar(df: pd.DataFrame, *, asof_date: date | None = None
         _check_asof_boundary(out, "effective_date", asof_date, "trading_calendar")
         _check_asof_boundary(out, "trade_date", asof_date, "trading_calendar")
 
-    for idx, row in out.iterrows():
+    for _idx, row in out.iterrows():
         prev_date = row["prev_trade_date"]
         next_date = row["next_trade_date"]
         trade_date = row["trade_date"]
@@ -133,7 +155,7 @@ def filter_visible_etf_master(df: pd.DataFrame, *, asof_date: date) -> pd.DataFr
         subset=["symbol"], keep="last"
     )
     visible["can_open_new_position"] = visible["delist_date"].apply(
-        lambda value: False if _not_null(value) and value <= asof_date else True
+        lambda value: not (_not_null(value) and value <= asof_date)
     )
     return visible.sort_values("symbol").reset_index(drop=True)
 
@@ -145,6 +167,41 @@ def filter_visible_trading_calendar(df: pd.DataFrame, *, asof_date: date) -> pd.
         (validated["effective_date"] <= asof_date) & (validated["trade_date"] <= asof_date)
     ].copy()
     return visible.sort_values(["market", "trade_date"]).reset_index(drop=True)
+
+
+def _read_csv(path: str | Path, *, table: str) -> pd.DataFrame:
+    csv_path = Path(path)
+    if not csv_path.exists():
+        raise FileNotFoundError(f"{table} reference file does not exist: {csv_path}")
+    return pd.read_csv(csv_path)
+
+
+def _convert_date_columns(df: pd.DataFrame, columns: list[str]) -> None:
+    for col in columns:
+        if col not in df.columns:
+            continue
+        parsed = pd.to_datetime(df[col], errors="coerce")
+        df[col] = parsed.apply(lambda value: value.date() if pd.notna(value) else None)
+
+
+def _convert_bool_columns(df: pd.DataFrame, columns: list[str]) -> None:
+    for col in columns:
+        if col not in df.columns:
+            continue
+        df[col] = df[col].apply(lambda value, column=col: _parse_bool(value, col=column))
+
+
+def _parse_bool(value: object, *, col: str) -> bool:
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    if _is_null(value):
+        raise ValueError(f"{col} must be bool and must not be null")
+    lowered = str(value).strip().lower()
+    if lowered in BOOL_TRUTHY:
+        return True
+    if lowered in BOOL_FALSY:
+        return False
+    raise ValueError(f"{col} must be bool-compatible, got {value!r}")
 
 
 def _require_columns(df: pd.DataFrame, required: list[str], table: str) -> None:
