@@ -37,19 +37,31 @@
 
 ---
 
-## 三、核心表 schema（初稿，W4 落地时定稿）
+## 三、核心表 schema（Phase 1 最小契约）
 
 ### 3.1 交易日历 `trading_calendar`
+
+`trading_calendar` 属于 reference layer，必须能按 `asof_date` 做点时点过滤。
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | trade_date | date | 交易日 |
 | is_open | bool | 是否开盘 |
-| prev_trade_date | date | 上一交易日 |
-| next_trade_date | date | 下一交易日 |
-| market | str | "SH" / "SZ" / "BJ" |
+| prev_trade_date | date \| null | 上一交易日；首行可为空 |
+| next_trade_date | date \| null | 下一交易日；末行可为空 |
+| market | str | `SH` / `SZ` / `BJ` |
+| effective_date | date | 该交易日历记录正式可用日期；必须满足 `effective_date <= asof_date` 才可进入 snapshot |
+
+约束：
+
+- `trade_date <= asof_date` 才允许进入 snapshot。
+- `effective_date <= asof_date` 才允许进入 snapshot。
+- `prev_trade_date < trade_date < next_trade_date`，首尾缺失时允许为空。
+- 日期字段必须是 `datetime.date`，禁止字符串日期、naive datetime、`pd.Timestamp` 混用。
 
 ### 3.2 ETF 主数据 `etf_master`
+
+`etf_master` 属于 reference layer，是构建当时可见 universe 的最小依据。
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
@@ -60,7 +72,19 @@
 | stamp_tax_applicable | bool | 印花税是否适用（默认 false） |
 | list_date | date | 上市日期 |
 | delist_date | date \| null | 退市日期；保留退市样本 |
-| exchange | str | `SH` / `SZ` |
+| exchange | str | `SH` / `SZ` / `BJ` |
+| effective_date | date | 该主数据记录正式可用日期；必须满足 `effective_date <= asof_date` 才可进入 snapshot |
+
+约束：
+
+- `effective_date <= asof_date` 的主数据记录才可见。
+- `list_date <= asof_date` 的 ETF 才允许进入当时可见 universe。
+- `delist_date <= asof_date` 的 ETF **必须保留历史记录**，但不得作为新开仓标的。
+- `filter_visible_etf_master(..., asof_date)` 的输出必须派生 `can_open_new_position`：
+  - 未退市或 `delist_date > asof_date`：`true`；
+  - 已退市，即 `delist_date <= asof_date`：`false`。
+- 不允许用最新 ETF 主数据回填历史 universe。
+- 日期字段必须是 `datetime.date`，禁止字符串日期、naive datetime、`pd.Timestamp` 混用。
 
 ### 3.3 行情 `prices_daily`（点时点）
 
@@ -76,6 +100,12 @@
 | limit_down | float | 当日跌停价 |
 | is_suspended | bool | 是否停牌 |
 | effective_date | date | 数据正式可用日（一般 = trade_date） |
+
+约束：
+
+- `trade_date <= asof_date` 才允许进入 snapshot。
+- `effective_date <= asof_date` 才允许进入 snapshot。
+- `symbol` 必须能在同一 snapshot 的 `etf_master` 中找到当时可见记录。
 
 #### 3.3.1 AKShare ETF 日线输入契约
 
@@ -102,7 +132,26 @@
 
 字段契约由 `tests/regression/test_akshare_contract.py` 锁定。缺失关键原始字段、非法价格、非法成交额、非法复权因子或违反 PIT 边界时必须失败。
 
-### 3.4 行业分类 `industry_mapping`
+### 3.4 Snapshot 最小依赖
+
+Phase 1 的 snapshot 至少必须包含：
+
+| 文件 | 说明 |
+|---|---|
+| `prices_daily.csv` | 点时点行情 |
+| `trading_calendar.csv` | 点时点交易日历 |
+| `etf_master.csv` | 点时点 ETF 主数据，包含 `can_open_new_position` |
+| `manifest.json` | 输入文件、reference 文件、hash、schema version、行数、日期范围 |
+
+约束：
+
+- 回测不得直接访问 raw、interim、processed；snapshot 是回测唯一可用来源。
+- snapshot 中所有表必须满足 `effective_date <= asof_date`。
+- snapshot 中所有行情必须满足 `trade_date <= asof_date`。
+- snapshot 中 `etf_master` 不得包含 `list_date > asof_date` 的 ETF。
+- snapshot 必须保留已退市 ETF 的历史主数据，但 `can_open_new_position` 必须为 `false`。
+
+### 3.5 行业分类 `industry_mapping`
 
 按 `effective_date` 切片存储。**禁止**用最新版本回填历史。
 
@@ -114,7 +163,7 @@
 | effective_date | date | 此映射的生效日 |
 | classification_version | str | 分类版本（如 `sw_2021`） |
 
-### 3.5 退市档案 `delist_history`
+### 3.6 退市档案 `delist_history`
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
@@ -143,7 +192,7 @@
 | 成交额 | "元"，与 `volume × close` 在容差内一致；不一致需在 `data/interim/` 记录差异 |
 | 财务数据 | 一律用 `announcement_date` 入模；`report_period` 仅展示 |
 | 缺失值 | 不允许 `0` 占位；用 `null`/`NaN` |
-| 类型 | 日期用 `date`，时间戳用 `pd.Timestamp(tz=...)`；禁止字符串日期混用 |
+| 类型 | 日期用 `datetime.date`；时间戳用 `pd.Timestamp(tz=...)`；禁止字符串日期混用；禁止 naive datetime |
 
 ---
 
