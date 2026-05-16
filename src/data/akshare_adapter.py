@@ -1,3 +1,4 @@
+# ruff: noqa: RUF002
 """AKShare 行情字段适配器。
 
 本模块只负责把 AKShare 原始 ETF 日线字段标准化为项目内部
@@ -5,10 +6,12 @@
 """
 from __future__ import annotations
 
+import hashlib
+from dataclasses import dataclass
 from datetime import date
+from pathlib import Path
 
 import pandas as pd
-
 
 RAW_FIELD_MAP = {
     "日期": "trade_date",
@@ -25,6 +28,62 @@ RAW_FIELD_MAP = {
 }
 
 REQUIRED_RAW_FIELDS = tuple(RAW_FIELD_MAP.keys())
+
+
+
+@dataclass(frozen=True)
+class RawWriteResult:
+    """AKShare raw 文件一次性落地结果。"""
+
+    path: Path
+    sha256: str
+    row_count: int
+
+
+def write_raw_etf_daily_csv(
+    raw: pd.DataFrame,
+    *,
+    raw_root: str | Path,
+    symbol: str,
+    asof_date: date,
+    vendor: str = "akshare",
+) -> RawWriteResult:
+    """把 AKShare ETF 日线 raw CSV 原子写入 `data/raw/{vendor}/{YYYYMMDD}/`。
+
+    raw 层遵守“一次写入，永不改写”：目标文件已存在时直接拒绝覆盖。
+    本函数只负责本地落盘和 hash 审计，不联网、不生成 snapshot。
+    """
+    missing = sorted(set(REQUIRED_RAW_FIELDS) - set(raw.columns))
+    if missing:
+        raise ValueError(f"missing required AKShare fields: {missing}")
+
+    if not symbol or "/" in symbol or "\\" in symbol:
+        raise ValueError("symbol must be a non-empty file-safe standardized code")
+    if not vendor or "/" in vendor or "\\" in vendor:
+        raise ValueError("vendor must be a non-empty path segment")
+
+    raw_dir = Path(raw_root) / vendor / asof_date.strftime("%Y%m%d")
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    raw_path = raw_dir / f"{symbol}.csv"
+
+    csv_bytes = (
+        raw.loc[:, REQUIRED_RAW_FIELDS]
+        .to_csv(index=False, lineterminator="\n")
+        .encode("utf-8")
+    )
+    try:
+        with raw_path.open("xb") as fh:
+            fh.write(csv_bytes)
+    except FileExistsError as exc:
+        msg = f"raw file already exists and must not be overwritten: {raw_path}"
+        raise FileExistsError(msg) from exc
+
+    return RawWriteResult(
+        path=raw_path,
+        sha256=hashlib.sha256(csv_bytes).hexdigest(),
+        row_count=len(raw),
+    )
+
 
 PRICE_COLUMNS = [
     "symbol",

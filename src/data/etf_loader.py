@@ -1,3 +1,4 @@
+# ruff: noqa: RUF002
 """ETF 数据加载器。
 
 只承担**数据加载与 PIT 截断**：主数据（YAML） + 行情（CSV/Parquet 快照） + 交易日历。
@@ -46,10 +47,19 @@ def _to_date(s: pd.Series) -> pd.Series:
 
 
 def load_etf_master(config_path: str | Path) -> pd.DataFrame:
-    """从 `config/universe/etf_pool.yaml` 加载 ETF 主数据。"""
-    config = yaml.safe_load(Path(config_path).read_text(encoding="utf-8"))
-    rows = config.get("etfs", [])
-    df = pd.DataFrame(rows)
+    """从 YAML 配置或 snapshot/reference CSV 加载 ETF 主数据。"""
+    path = Path(config_path)
+    if path.is_dir():
+        master_file = path / "etf_master.csv"
+        if not master_file.exists():
+            raise FileNotFoundError(f"未在 {path} 找到 etf_master.csv")
+        df = pd.read_csv(master_file)
+    elif path.suffix.lower() == ".csv":
+        df = pd.read_csv(path)
+    else:
+        config = yaml.safe_load(path.read_text(encoding="utf-8"))
+        rows = config.get("etfs", [])
+        df = pd.DataFrame(rows)
     for col in MASTER_COLUMNS:
         if col not in df.columns:
             df[col] = pd.NA
@@ -63,16 +73,14 @@ def load_prices(snapshot_path: str | Path, symbols: list[str] | None = None) -> 
     """从快照目录或单文件加载行情。支持 CSV 与 Parquet。"""
     path = Path(snapshot_path)
     if path.is_dir():
-        candidates = [path / "prices.parquet", path / "prices.csv"]
+        candidates = [path / "prices.parquet", path / "prices.csv", path / "prices_daily.csv"]
         prices_file = next((p for p in candidates if p.exists()), None)
         if prices_file is None:
-            raise FileNotFoundError(f"未在 {path} 找到 prices.parquet 或 prices.csv")
+            msg = f"未在 {path} 找到 prices.parquet、prices.csv 或 prices_daily.csv"
+            raise FileNotFoundError(msg)
     else:
         prices_file = path
-    if prices_file.suffix == ".csv":
-        df = pd.read_csv(prices_file)
-    else:
-        df = pd.read_parquet(prices_file)
+    df = pd.read_csv(prices_file) if prices_file.suffix == ".csv" else pd.read_parquet(prices_file)
     df["trade_date"] = _to_date(df["trade_date"])
     if "effective_date" not in df.columns:
         df["effective_date"] = df["trade_date"]
@@ -91,7 +99,8 @@ def load_calendar(snapshot_path: str | Path) -> pd.DataFrame:
     """从快照目录或单文件加载交易日历。"""
     path = Path(snapshot_path)
     if path.is_dir():
-        cal_file = path / "calendar.csv"
+        candidates = [path / "calendar.csv", path / "trading_calendar.csv"]
+        cal_file = next((p for p in candidates if p.exists()), path / "calendar.csv")
     else:
         cal_file = path
     df = pd.read_csv(cal_file)
@@ -103,11 +112,11 @@ def load_calendar(snapshot_path: str | Path) -> pd.DataFrame:
         df["prev_trade_date"] = _to_date(df["prev_trade_date"])
     else:
         df = df.sort_values("trade_date").reset_index(drop=True)
-        df["prev_trade_date"] = [None] + df["trade_date"].tolist()[:-1]
+        df["prev_trade_date"] = [None, *df["trade_date"].tolist()[:-1]]
     if "next_trade_date" in df.columns:
         df["next_trade_date"] = _to_date(df["next_trade_date"])
     else:
-        df["next_trade_date"] = df["trade_date"].tolist()[1:] + [None]
+        df["next_trade_date"] = [*df["trade_date"].tolist()[1:], None]
     return df[CALENDAR_COLUMNS].reset_index(drop=True)
 
 
