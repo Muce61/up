@@ -218,6 +218,59 @@ def build_price_snapshot(
         etf_master_path=snapshot_etf_master_path,
         trading_calendar_path=snapshot_trading_calendar_path,
     )
+    _convert_bool_columns(calendar, ["is_open"])
+    return filter_visible_trading_calendar(calendar, asof_date=asof_date)
+
+
+def _visible_etf_master_from_frame(df: pd.DataFrame, *, asof_date: date) -> pd.DataFrame:
+    master = df.copy()
+    _convert_date_columns(master, ["list_date", "delist_date", "effective_date"])
+    _convert_bool_columns(master, ["stamp_tax_applicable"])
+    return filter_visible_etf_master(master, asof_date=asof_date)
+
+
+def _apply_reference_universe(
+    prices: pd.DataFrame, visible_master: pd.DataFrame | None
+) -> pd.DataFrame:
+    if visible_master is None:
+        return prices.sort_values(["symbol", "trade_date", "effective_date"]).reset_index(drop=True)
+    visible_symbols = set(visible_master["symbol"].astype(str).tolist())
+    filtered = prices[prices["symbol"].astype(str).isin(visible_symbols)].copy()
+    if filtered.empty:
+        raise ValueError("reference etf_master removed all prices_daily rows")
+    return filtered.sort_values(["symbol", "trade_date", "effective_date"]).reset_index(drop=True)
+
+
+def _convert_date_columns(df: pd.DataFrame, columns: list[str]) -> None:
+    for col in columns:
+        if col not in df.columns:
+            continue
+        parsed = pd.to_datetime(df[col], errors="coerce")
+        df[col] = parsed.apply(lambda value: value.date() if pd.notna(value) else None)
+
+
+def _convert_bool_columns(df: pd.DataFrame, columns: list[str]) -> None:
+    truthy = {"true", "1", "yes", "y"}
+    falsy = {"false", "0", "no", "n", ""}
+    for col in columns:
+        if col not in df.columns:
+            continue
+        df[col] = df[col].apply(
+            lambda value, column=col: _parse_bool(value, col=column, truthy=truthy, falsy=falsy)
+        )
+
+
+def _parse_bool(value: object, *, col: str, truthy: set[str], falsy: set[str]) -> bool:
+    if isinstance(value, bool):
+        return value
+    if pd.isna(value):
+        raise ValueError(f"{col} must be bool and must not be null")
+    lowered = str(value).strip().lower()
+    if lowered in truthy:
+        return True
+    if lowered in falsy:
+        return False
+    raise ValueError(f"{col} must be bool-compatible, got {value!r}")
 
 
 def _split_reference_outputs(
