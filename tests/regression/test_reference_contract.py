@@ -123,7 +123,7 @@ def test_filter_visible_etf_master_keeps_delisted_history_but_blocks_new_positio
     delisted = visible[visible["symbol"] == "510999.SH"].iloc[0]
 
     assert delisted["delist_date"] == date(2026, 5, 10)
-    assert delisted["can_open_new_position"] is False
+    assert bool(delisted["can_open_new_position"]) is False
 
 
 @pytest.mark.regression
