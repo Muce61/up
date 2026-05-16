@@ -130,7 +130,13 @@
 - `symbol`：由调用方显式传入标准代码，例如 `510300.SH`。
 - `effective_date`：ETF 日线行情默认等于 `trade_date`，且必须满足 `effective_date <= asof_date`。
 
-字段契约由 `tests/regression/test_akshare_contract.py` 锁定。缺失关键原始字段、非法价格、非法成交额、非法复权因子或违反 PIT 边界时必须失败。
+raw 落地规则：
+
+- AKShare ETF 日线 raw 必须写入 `data/raw/akshare/{YYYYMMDD}/{symbol}.csv`。
+- raw 文件一旦写入即为审计输入，后续同一路径禁止覆盖；如需重新拉取，必须使用新的 `asof_date` 目录。
+- raw 落地必须返回 SHA-256 hash 与行数，用于真实样例的复现、diff 与 manifest 校验。
+
+字段契约由 `tests/regression/test_akshare_contract.py` 锁定。缺失关键原始字段、非法价格、非法成交额、非法复权因子、违反 PIT 边界或覆盖 raw 时必须失败。
 
 ### 3.4 Snapshot 最小依赖
 
