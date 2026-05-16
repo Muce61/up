@@ -1,0 +1,5 @@
+trade_date,is_open,prev_trade_date,next_trade_date,market,effective_date
+2026-05-10,true,,2026-05-11,SH,2026-05-09
+2026-05-11,true,2026-05-10,2026-05-12,SH,2026-05-10
+2026-05-12,true,2026-05-11,2026-05-13,SH,2026-05-12
+2026-05-13,true,2026-05-12,,SH,2026-05-13

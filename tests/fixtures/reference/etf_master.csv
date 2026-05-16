@@ -1,0 +1,5 @@
+symbol,name,etf_type,settlement,stamp_tax_applicable,list_date,delist_date,exchange,effective_date
+510300.SH,沪深300ETF,broad_index,T+1,false,2012-05-28,,SH,2026-05-01
+159999.SZ,未来上市ETF,sector,T+1,false,2026-06-01,,SZ,2026-05-01
+510999.SH,已退市ETF,broad_index,T+1,false,2015-01-05,2026-05-10,SH,2026-05-01
+518880.SH,黄金ETF未来修订,gold,T+0,false,2013-07-29,,SH,2026-05-20

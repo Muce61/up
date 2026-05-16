@@ -1,3 +1,4 @@
+# ruff: noqa: RUF002, RUF043, E402, I001
 """回归测试：reference layer 最小数据契约与 PIT 过滤。"""
 from __future__ import annotations
 
@@ -169,3 +170,76 @@ def test_reference_contract_rejects_invalid_enums() -> None:
 
     with pytest.raises(ValueError, match="etf_master.etf_type"):
         validate_etf_master(broken)
+
+
+@pytest.mark.regression
+def test_reference_contract_column_sets_are_frozen() -> None:
+    from src.data.reference import ETF_MASTER_COLUMNS, TRADING_CALENDAR_COLUMNS
+
+    assert TRADING_CALENDAR_COLUMNS == [
+        "trade_date",
+        "is_open",
+        "prev_trade_date",
+        "next_trade_date",
+        "market",
+        "effective_date",
+    ]
+    assert ETF_MASTER_COLUMNS == [
+        "symbol",
+        "name",
+        "etf_type",
+        "settlement",
+        "stamp_tax_applicable",
+        "list_date",
+        "delist_date",
+        "exchange",
+        "effective_date",
+    ]
+
+
+@pytest.mark.regression
+def test_filter_visible_etf_master_uses_latest_pit_revision_only() -> None:
+    master = pd.DataFrame(
+        [
+            {
+                "symbol": "510300.SH",
+                "name": "沪深300ETF旧名称",
+                "etf_type": "broad_index",
+                "settlement": "T+1",
+                "stamp_tax_applicable": False,
+                "list_date": date(2012, 5, 28),
+                "delist_date": None,
+                "exchange": "SH",
+                "effective_date": date(2026, 5, 1),
+            },
+            {
+                "symbol": "510300.SH",
+                "name": "沪深300ETF当时可见名称",
+                "etf_type": "broad_index",
+                "settlement": "T+1",
+                "stamp_tax_applicable": False,
+                "list_date": date(2012, 5, 28),
+                "delist_date": None,
+                "exchange": "SH",
+                "effective_date": date(2026, 5, 12),
+            },
+            {
+                "symbol": "510300.SH",
+                "name": "沪深300ETF未来名称",
+                "etf_type": "broad_index",
+                "settlement": "T+1",
+                "stamp_tax_applicable": False,
+                "list_date": date(2012, 5, 28),
+                "delist_date": None,
+                "exchange": "SH",
+                "effective_date": date(2026, 5, 20),
+            },
+        ]
+    )
+
+    visible = filter_visible_etf_master(master, asof_date=date(2026, 5, 12))
+
+    assert visible["symbol"].tolist() == ["510300.SH"]
+    assert visible["name"].tolist() == ["沪深300ETF当时可见名称"]
+    assert visible["effective_date"].tolist() == [date(2026, 5, 12)]
+    assert bool(visible["can_open_new_position"].iloc[0]) is True

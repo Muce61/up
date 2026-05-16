@@ -239,3 +239,19 @@ P1-W4-03 引入 `data/snapshots/<snapshot_version>/manifest.json`。该 manifest
 - **当前不支持**：shim 仍不支持 class-based 测试、conftest 嵌套、`raises` 的 `match` 之外的 pytest 高级特性；真实 pytest 不可用。
 - **架构约束**：本次只补测试基础设施，不改任何被测代码。
 - **晋升状态**：`pending`；**阶段判断不变——系统仍不可靠，不能进入模拟盘，不能进入下一阶段。** 本次修复只是让"能否验证"成为可能，并未让系统变得可信。`docs/phase_summary.md`（2026-05-14）在事实层已过时（walk_forward / snapshot / akshare_adapter 已非 stub、测试数已非 110），但其**总判断仍然成立**，故按"判断未变化则不改 phase_summary"的约定未改动该文件。
+
+### 2026-05-16 — Step 5/6 真实数据链路闭环验收与文档更新
+
+- **任务**：真实形态 raw/reference/snapshot → backtest → report 端到端验收，以及阶段状态文档更新。
+- **范围**：
+  - 新增 `tests/fixtures/realistic_raw/` 小型真实形态样例，包含 AKShare 形态 raw CSV、`reference/etf_master.csv`、`reference/trading_calendar.csv`；
+  - 新增 `tests/regression/test_snapshot_to_backtest_e2e.py`，用 fixture 构建 snapshot、从 snapshot 目录加载 prices/master/calendar、运行 `engine.run_backtest`、生成 `reports/backtest/{run_id}/`；
+  - 校验 asof 截断、未来上市 ETF 不进入 universe、退市后新开仓拒绝、停牌不可交易、报告文件完整、manifest 记录 snapshot_version、重复运行 hash / 字段级一致；
+  - 更新 `docs/phase_summary.md`，明确真实形态数据链路已有最小闭环，但仍不能进入模拟盘、不能进入 Phase 2、不能做策略有效性结论。
+- **新增测试**：
+  - `tests/regression/test_snapshot_to_backtest_e2e.py::test_realistic_raw_reference_snapshot_to_backtest_e2e`
+  - `tests/regression/test_snapshot_to_backtest_e2e.py::test_realistic_snapshot_to_backtest_chain_is_reproducible`
+- **报告产物处理**：测试会在 pytest `tmp_path` 下生成 `reports/backtest/realistic-snapshot-e2e/` 并校验必需文件和 hash；该目录不提交入库，避免把小型 fixture 输出误认为正式策略归档。仓库内 `reports/backtest/` 仍只保留 `.gitkeep`。
+- **当前仍缺**：真实 benchmark 接入、walk-forward fold runner、参数扰动、因子诊断、独立订单生命周期、paper-trade / 执行偏差度量。
+- **下一步唯一任务**：接入真实 benchmark；不得抢跑 Phase 2、不得改策略参数、不得启动模拟盘。
+- **晋升状态**：`pending`；本任务只证明工程链路可闭环，不构成策略晋升，不允许进入模拟盘，不允许进入 Phase 2。
