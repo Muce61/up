@@ -106,6 +106,35 @@ def test_snapshot_truncates_rows_after_asof_date(tmp_path: Path) -> None:
     assert "2026-05-13" not in set(prices["trade_date"])
 
 
+def test_snapshot_omits_empty_reference_kwargs(tmp_path: Path, monkeypatch) -> None:
+    raw_root = tmp_path / "data" / "raw"
+    _write_raw_csv(raw_root)
+
+    from src.data import snapshot as snapshot_module
+
+    calls: list[tuple[object, date]] = []
+
+    def fake_load_reference_outputs(
+        reference_root: object, *, asof_date: date
+    ) -> tuple[dict[str, pd.DataFrame], dict[str, str]]:
+        calls.append((reference_root, asof_date))
+        return {}, {}
+
+    monkeypatch.setattr(
+        snapshot_module,
+        "_load_reference_outputs",
+        fake_load_reference_outputs,
+    )
+
+    snapshot_module.build_price_snapshot(
+        raw_root=raw_root,
+        snapshot_root=tmp_path / "data" / "snapshots",
+        asof_date=date(2026, 5, 12),
+    )
+
+    assert calls == [(None, date(2026, 5, 12))]
+
+
 def test_snapshot_rejects_missing_required_raw_field(tmp_path: Path) -> None:
     raw_root = tmp_path / "data" / "raw"
     raw_path = _write_raw_csv(raw_root)
