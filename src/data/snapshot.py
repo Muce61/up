@@ -131,6 +131,7 @@ def build_price_snapshot(
     _validate_snapshot_prices(prices, asof_date=asof_date)
 
     prices_csv_bytes = _to_deterministic_csv_bytes(prices)
+    reference_outputs = _load_reference_outputs(reference_root_path, asof_date=asof_date)
     reference_output_hashes = {
         f"snapshot/{_snapshot_reference_filename(name)}": _sha256_bytes(
             _to_deterministic_csv_bytes(df)
@@ -175,6 +176,7 @@ def build_price_snapshot(
             reference_hashes["snapshot/trading_calendar.csv"] = _sha256_bytes(csv_bytes)
         row_counts[name] = len(df)
         reference_row_counts[name] = len(df)
+        row_counts[name] = len(df)
 
     file_hashes = {**dict(sorted(input_file_hashes.items())), **output_hashes}
 
@@ -335,6 +337,54 @@ def _parse_bool(value: object, *, col: str, truthy: set[str], falsy: set[str]) -
     if lowered in falsy:
         return False
     raise ValueError(f"{col} must be bool-compatible, got {value!r}")
+
+
+
+
+def _snapshot_reference_filename(name: str) -> str:
+    if name == "etf_master":
+        return "etf_master.csv"
+    if name == "trading_calendar":
+        return "trading_calendar.csv"
+    raise ValueError(f"unsupported reference output: {name}")
+
+
+def _load_reference_outputs(
+    reference_root: Path | None, *, asof_date: date
+) -> dict[str, pd.DataFrame]:
+    if reference_root is None:
+        return {}
+    if not reference_root.exists():
+        raise FileNotFoundError(f"reference_root does not exist: {reference_root}")
+
+    outputs: dict[str, pd.DataFrame] = {}
+    calendar_path = reference_root / "trading_calendar.csv"
+    master_path = reference_root / "etf_master.csv"
+
+    if calendar_path.exists():
+        calendar = pd.read_csv(calendar_path)
+        _convert_date_columns(
+            calendar,
+            ["trade_date", "prev_trade_date", "next_trade_date", "effective_date"],
+        )
+        visible_calendar = filter_visible_trading_calendar(calendar, asof_date=asof_date)
+        outputs["trading_calendar"] = visible_calendar
+
+    if master_path.exists():
+        master = pd.read_csv(master_path)
+        _convert_date_columns(master, ["list_date", "delist_date", "effective_date"])
+        visible_master = filter_visible_etf_master(master, asof_date=asof_date)
+        outputs["etf_master"] = visible_master
+
+    return outputs
+
+
+def _convert_date_columns(df: pd.DataFrame, columns: list[str]) -> None:
+    for col in columns:
+        if col not in df.columns:
+            continue
+        parsed = pd.to_datetime(df[col], errors="coerce")
+        df[col] = parsed.apply(lambda value: value.date() if pd.notna(value) else None)
 
 
 def _discover_raw_files(raw_root: Path, *, asof_date: date) -> list[_RawInputFile]:
