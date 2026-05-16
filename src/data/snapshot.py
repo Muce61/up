@@ -121,19 +121,26 @@ def build_price_snapshot(
         .reset_index(drop=True)
     )
 
-    reference_outputs, reference_files = _load_reference_outputs(
+    reference_options: dict[str, Any] = {}
+    if trading_calendar_path is not None:
+        reference_options["trading_calendar_path"] = trading_calendar_path
+    if trading_calendar is not None:
+        reference_options["trading_calendar"] = trading_calendar
+    if etf_master_path is not None:
+        reference_options["etf_master_path"] = etf_master_path
+    if etf_master is not None:
+        reference_options["etf_master"] = etf_master
+
+    reference_result = _load_reference_outputs(
         reference_root_path,
         asof_date=asof_date,
-        trading_calendar_path=trading_calendar_path,
-        trading_calendar=trading_calendar,
-        etf_master_path=etf_master_path,
-        etf_master=etf_master,
+        **reference_options,
     )
+    reference_outputs, reference_files = _split_reference_outputs(reference_result)
     prices = _apply_reference_universe(prices, reference_outputs.get("etf_master"))
     _validate_snapshot_prices(prices, asof_date=asof_date)
 
     prices_csv_bytes = _to_deterministic_csv_bytes(prices)
-    reference_outputs = _load_reference_outputs(reference_root_path, asof_date=asof_date)
     reference_output_hashes = {
         f"snapshot/{_snapshot_reference_filename(name)}": _sha256_bytes(
             _to_deterministic_csv_bytes(df)
@@ -155,8 +162,8 @@ def build_price_snapshot(
     prices_path = snapshot_dir / "prices_daily.csv"
     prices_path.write_bytes(prices_csv_bytes)
 
-    etf_master_path: Path | None = None
-    trading_calendar_path: Path | None = None
+    snapshot_etf_master_path: Path | None = None
+    snapshot_trading_calendar_path: Path | None = None
 
     created_at_value = created_at or _deterministic_created_at(asof_date)
     output_hashes = {"snapshot/prices_daily.csv": _sha256_bytes(prices_csv_bytes)}
@@ -167,18 +174,17 @@ def build_price_snapshot(
     for name, df in reference_outputs.items():
         csv_bytes = _to_deterministic_csv_bytes(df)
         if name == "etf_master":
-            etf_master_path = snapshot_dir / "etf_master.csv"
-            etf_master_path.write_bytes(csv_bytes)
+            snapshot_etf_master_path = snapshot_dir / "etf_master.csv"
+            snapshot_etf_master_path.write_bytes(csv_bytes)
             output_hashes["snapshot/etf_master.csv"] = _sha256_bytes(csv_bytes)
             reference_hashes["snapshot/etf_master.csv"] = _sha256_bytes(csv_bytes)
         elif name == "trading_calendar":
-            trading_calendar_path = snapshot_dir / "trading_calendar.csv"
-            trading_calendar_path.write_bytes(csv_bytes)
+            snapshot_trading_calendar_path = snapshot_dir / "trading_calendar.csv"
+            snapshot_trading_calendar_path.write_bytes(csv_bytes)
             output_hashes["snapshot/trading_calendar.csv"] = _sha256_bytes(csv_bytes)
             reference_hashes["snapshot/trading_calendar.csv"] = _sha256_bytes(csv_bytes)
         row_counts[name] = len(df)
         reference_row_counts[name] = len(df)
-        row_counts[name] = len(df)
 
     file_hashes = {**dict(sorted(input_file_hashes.items())), **output_hashes}
 
@@ -209,82 +215,8 @@ def build_price_snapshot(
         snapshot_dir=snapshot_dir,
         prices_path=prices_path,
         manifest_path=manifest_path,
-        etf_master_path=etf_master_path,
-        trading_calendar_path=trading_calendar_path,
-    )
-
-
-
-
-def _snapshot_reference_filename(name: str) -> str:
-    if name == "etf_master":
-        return "etf_master.csv"
-    if name == "trading_calendar":
-        return "trading_calendar.csv"
-    raise ValueError(f"unsupported reference output: {name}")
-
-
-def _load_reference_outputs(
-    reference_root: Path | None,
-    *,
-    asof_date: date,
-    trading_calendar_path: str | Path | None = None,
-    trading_calendar: pd.DataFrame | None = None,
-    etf_master_path: str | Path | None = None,
-    etf_master: pd.DataFrame | None = None,
-) -> tuple[dict[str, pd.DataFrame], dict[str, str]]:
-    if reference_root is not None and not reference_root.exists():
-        raise FileNotFoundError(f"reference_root does not exist: {reference_root}")
-
-    if trading_calendar is not None and trading_calendar_path is not None:
-        raise ValueError("pass only one of trading_calendar or trading_calendar_path")
-    if etf_master is not None and etf_master_path is not None:
-        raise ValueError("pass only one of etf_master or etf_master_path")
-
-    calendar_path = Path(trading_calendar_path) if trading_calendar_path is not None else None
-    master_path = Path(etf_master_path) if etf_master_path is not None else None
-    if reference_root is not None:
-        calendar_path = calendar_path or reference_root / "trading_calendar.csv"
-        master_path = master_path or reference_root / "etf_master.csv"
-
-    outputs: dict[str, pd.DataFrame] = {}
-    reference_files: dict[str, str] = {}
-
-    if trading_calendar is not None:
-        visible_calendar = _visible_trading_calendar_from_frame(
-            trading_calendar, asof_date=asof_date
-        )
-        outputs["trading_calendar"] = visible_calendar
-        reference_files["trading_calendar"] = "<dataframe>"
-    elif calendar_path is not None:
-        if not calendar_path.exists():
-            msg = f"trading_calendar reference file does not exist: {calendar_path}"
-            raise FileNotFoundError(msg)
-        calendar = pd.read_csv(calendar_path)
-        visible_calendar = _visible_trading_calendar_from_frame(calendar, asof_date=asof_date)
-        outputs["trading_calendar"] = visible_calendar
-        reference_files["trading_calendar"] = calendar_path.as_posix()
-
-    if etf_master is not None:
-        visible_master = _visible_etf_master_from_frame(etf_master, asof_date=asof_date)
-        outputs["etf_master"] = visible_master
-        reference_files["etf_master"] = "<dataframe>"
-    elif master_path is not None:
-        if not master_path.exists():
-            raise FileNotFoundError(f"etf_master reference file does not exist: {master_path}")
-        master = pd.read_csv(master_path)
-        visible_master = _visible_etf_master_from_frame(master, asof_date=asof_date)
-        outputs["etf_master"] = visible_master
-        reference_files["etf_master"] = master_path.as_posix()
-
-    return outputs, dict(sorted(reference_files.items()))
-
-
-def _visible_trading_calendar_from_frame(df: pd.DataFrame, *, asof_date: date) -> pd.DataFrame:
-    calendar = df.copy()
-    _convert_date_columns(
-        calendar,
-        ["trade_date", "prev_trade_date", "next_trade_date", "effective_date"],
+        etf_master_path=snapshot_etf_master_path,
+        trading_calendar_path=snapshot_trading_calendar_path,
     )
     _convert_bool_columns(calendar, ["is_open"])
     return filter_visible_trading_calendar(calendar, asof_date=asof_date)
@@ -341,52 +273,35 @@ def _parse_bool(value: object, *, col: str, truthy: set[str], falsy: set[str]) -
     raise ValueError(f"{col} must be bool-compatible, got {value!r}")
 
 
+def _split_reference_outputs(
+    reference_result: object,
+) -> tuple[dict[str, pd.DataFrame], dict[str, str]]:
+    """Normalize supported reference loader return shapes.
 
+    The canonical return value is ``(outputs, reference_files)``.  This
+    defensive normalization also accepts a bare outputs mapping and one level
+    of accidentally nested tuple output so a merge-conflict resolution cannot
+    make callers treat a tuple as the outputs mapping.
+    """
+    if isinstance(reference_result, dict):
+        return reference_result, {}
 
-def _snapshot_reference_filename(name: str) -> str:
-    if name == "etf_master":
-        return "etf_master.csv"
-    if name == "trading_calendar":
-        return "trading_calendar.csv"
-    raise ValueError(f"unsupported reference output: {name}")
+    if not isinstance(reference_result, tuple) or len(reference_result) != 2:
+        raise TypeError("reference loader must return outputs or (outputs, reference_files)")
 
+    outputs, reference_files = reference_result
+    if isinstance(outputs, tuple) and len(outputs) == 2:
+        nested_outputs, nested_reference_files = outputs
+        outputs = nested_outputs
+        if not reference_files and isinstance(nested_reference_files, dict):
+            reference_files = nested_reference_files
 
-def _load_reference_outputs(
-    reference_root: Path | None, *, asof_date: date
-) -> dict[str, pd.DataFrame]:
-    if reference_root is None:
-        return {}
-    if not reference_root.exists():
-        raise FileNotFoundError(f"reference_root does not exist: {reference_root}")
+    if not isinstance(outputs, dict):
+        raise TypeError("reference loader outputs must be a dict")
+    if not isinstance(reference_files, dict):
+        raise TypeError("reference loader reference_files must be a dict")
 
-    outputs: dict[str, pd.DataFrame] = {}
-    calendar_path = reference_root / "trading_calendar.csv"
-    master_path = reference_root / "etf_master.csv"
-
-    if calendar_path.exists():
-        calendar = pd.read_csv(calendar_path)
-        _convert_date_columns(
-            calendar,
-            ["trade_date", "prev_trade_date", "next_trade_date", "effective_date"],
-        )
-        visible_calendar = filter_visible_trading_calendar(calendar, asof_date=asof_date)
-        outputs["trading_calendar"] = visible_calendar
-
-    if master_path.exists():
-        master = pd.read_csv(master_path)
-        _convert_date_columns(master, ["list_date", "delist_date", "effective_date"])
-        visible_master = filter_visible_etf_master(master, asof_date=asof_date)
-        outputs["etf_master"] = visible_master
-
-    return outputs
-
-
-def _convert_date_columns(df: pd.DataFrame, columns: list[str]) -> None:
-    for col in columns:
-        if col not in df.columns:
-            continue
-        parsed = pd.to_datetime(df[col], errors="coerce")
-        df[col] = parsed.apply(lambda value: value.date() if pd.notna(value) else None)
+    return outputs, reference_files
 
 
 def _snapshot_reference_filename(name: str) -> str:

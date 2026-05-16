@@ -163,6 +163,39 @@ def test_snapshot_output_columns_match_data_contract(tmp_path: Path) -> None:
     assert prices.columns.tolist() == PRICE_COLUMNS
 
 
+def test_snapshot_normalizes_nested_reference_loader_result(tmp_path: Path, monkeypatch) -> None:
+    raw_root = tmp_path / "data" / "raw"
+    _write_raw_csv(raw_root)
+
+    from src.data import snapshot as snapshot_module
+
+    def fake_load_reference_outputs(
+        reference_root: object, *, asof_date: date
+    ) -> tuple[tuple[dict[str, pd.DataFrame], dict[str, str]], dict[str, str]]:
+        return ({}, {}), {}
+
+    monkeypatch.setattr(
+        snapshot_module,
+        "_load_reference_outputs",
+        fake_load_reference_outputs,
+    )
+
+    result = snapshot_module.build_price_snapshot(
+        raw_root=raw_root,
+        snapshot_root=tmp_path / "data" / "snapshots",
+        asof_date=date(2026, 5, 12),
+    )
+
+    assert result.prices_path.exists()
+
+
+def test_snapshot_source_has_single_reference_loader() -> None:
+    source = (REPO_ROOT / "src" / "data" / "snapshot.py").read_text(encoding="utf-8")
+
+    assert source.count("def _load_reference_outputs(") == 1
+    assert source.count("def _snapshot_reference_filename(") == 1
+
+
 def _write_reference_csv(reference_root: Path) -> None:
     reference_root.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(
