@@ -15,6 +15,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--asof-date", required=True, help="YYYY-MM-DD")
     parser.add_argument("--snapshot-version", default=None)
     parser.add_argument("--reference-root", type=Path, default=None)
+    parser.add_argument("--trading-calendar-path", type=Path, default=None)
+    parser.add_argument("--etf-master-path", type=Path, default=None)
     parser.add_argument("--schema-version", default="prices_daily.v1")
     return parser.parse_args()
 
@@ -28,6 +30,8 @@ def main() -> None:
         snapshot_version=args.snapshot_version,
         schema_version=args.schema_version,
         reference_root=args.reference_root,
+        trading_calendar_path=args.trading_calendar_path,
+        etf_master_path=args.etf_master_path,
     )
     print(result.snapshot_dir.as_posix())
 
