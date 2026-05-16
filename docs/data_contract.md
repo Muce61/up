@@ -8,7 +8,7 @@
 
 ## 一、时间字段标准
 
-所有时间字段必须显式声明时区，**禁止 naive datetime**。
+Step 1 冻结范围内，所有业务日期字段在 Python 代码中必须使用 `datetime.date`；落地 CSV 时使用 ISO `YYYY-MM-DD` 字符串，加载后必须还原为 `datetime.date` 再进入 schema 校验。所有时间戳字段必须显式声明时区，**禁止 naive datetime**。Phase 1 A 股数据统一按 `Asia/Shanghai` 解释。
 
 | 字段 | 类型 | 含义 | 时区 |
 |---|---|---|---|
@@ -26,14 +26,20 @@
 
 | 层 | 路径 | 写入策略 | 用途 |
 |---|---|---|---|
-| raw | `data/raw/{vendor}/{YYYYMMDD}/...` | 一次写入，**永不改写** | 上游原始落地 |
+| raw | `data/raw/{vendor}/{YYYYMMDD}/...` | 一次写入，**永不改写** | 上游原始落地；不得被回测直接读取 |
 | interim | `data/interim/...` | 可改写 | 解析后中间产物 |
 | processed | `data/processed/...` | 可改写 | 清洗后的可用数据 |
 | feature_store | `data/feature_store/...` | 可改写 | 点时点因子表 |
-| reference | `data/reference/...` | 入库 | 交易日历、主数据、退市档案 |
+| reference | `data/reference/...` | 入库 | 交易日历、主数据、退市档案；必须支持 `asof_date` 点时点过滤 |
 | snapshots | `data/snapshots/{snapshot_version}/...` | 入库 | **回测唯一可用来源** |
 
 `snapshot_version` 命名：`{YYYYMMDD}-{short_hash}`（如 `20260511-d4e5f6`）。
+
+reference layer MVP 读取入口：
+
+- `load_trading_calendar(path, asof_date)`：从 `trading_calendar.csv` 读取并按 `trade_date <= asof_date`、`effective_date <= asof_date` 返回可见交易日历。
+- `load_etf_master(path, asof_date)`：从 `etf_master.csv` 读取并按 `effective_date <= asof_date`、`list_date <= asof_date` 返回可见 ETF 主数据，同时派生 `can_open_new_position`。
+- reference CSV 只作为构建 snapshot 的输入；回测仍只能读取 snapshot。
 
 ---
 
@@ -55,9 +61,11 @@
 约束：
 
 - `trade_date <= asof_date` 才允许进入 snapshot。
-- `effective_date <= asof_date` 才允许进入 snapshot。
+- `effective_date <= asof_date` 才允许进入 snapshot；否则 schema 校验必须报错。
 - `prev_trade_date < trade_date < next_trade_date`，首尾缺失时允许为空。
-- 日期字段必须是 `datetime.date`，禁止字符串日期、naive datetime、`pd.Timestamp` 混用。
+- `prev_trade_date` / `next_trade_date` 允许缺失值仅表示边界未知；禁止用 `1970-01-01`、空字符串或 `0` 占位。
+- 日期字段在 DataFrame 中必须是 `datetime.date`，禁止字符串日期、naive datetime、`pd.Timestamp` 混用。
+- 缺少任一必需字段时必须报出包含表名和字段名的明确错误。
 
 ### 3.2 ETF 主数据 `etf_master`
 
@@ -77,13 +85,15 @@
 
 约束：
 
-- `effective_date <= asof_date` 的主数据记录才可见。
-- `list_date <= asof_date` 的 ETF 才允许进入当时可见 universe。
+- `effective_date <= asof_date` 的主数据记录才可见；传入 `asof_date` 做 schema 校验时，`effective_date > asof_date` 必须报错。
+- 同一 `symbol` 存在多条主数据修订时，只允许使用 `effective_date <= asof_date` 中最新的一条。
+- `list_date <= asof_date` 的 ETF 才允许进入当时可见 universe；`list_date > asof_date` 的 ETF 不得出现在可见 universe 中。
 - `delist_date <= asof_date` 的 ETF **必须保留历史记录**，但不得作为新开仓标的。
 - `filter_visible_etf_master(..., asof_date)` 的输出必须派生 `can_open_new_position`：
   - 未退市或 `delist_date > asof_date`：`true`；
   - 已退市，即 `delist_date <= asof_date`：`false`。
 - 不允许用最新 ETF 主数据回填历史 universe。
+- `delist_date` 允许为 null；其他必需字段不允许缺失，不允许用空字符串或 `0` 占位。
 - 日期字段必须是 `datetime.date`，禁止字符串日期、naive datetime、`pd.Timestamp` 混用。
 
 ### 3.3 行情 `prices_daily`（点时点）
@@ -130,11 +140,26 @@
 - `symbol`：由调用方显式传入标准代码，例如 `510300.SH`。
 - `effective_date`：ETF 日线行情默认等于 `trade_date`，且必须满足 `effective_date <= asof_date`。
 
-字段契约由 `tests/regression/test_akshare_contract.py` 锁定。缺失关键原始字段、非法价格、非法成交额、非法复权因子或违反 PIT 边界时必须失败。
+输入与缺失值规则：
+
+- AKShare raw 日期列可为 `YYYY-MM-DD` 字符串或可解析日期值，但进入标准化输出后必须为 `datetime.date`。
+- 价格、成交额、复权因子不允许缺失、不允许为 0 或负数；成交量不允许缺失且必须非负。
+- `停牌` 缺失时可按 `False` 处理；其他必需 raw 字段缺失必须报错。
+- `最高` 必须不低于 `开盘/最低/收盘`，`最低` 必须不高于 `开盘/最高/收盘`。
+
+raw 落地规则：
+
+- AKShare ETF 日线 raw 必须写入 `data/raw/akshare/{YYYYMMDD}/{symbol}.csv`。
+- raw 文件一旦写入即为审计输入，默认禁止覆盖；只有显式运维动作（例如 CLI `--overwrite`）才允许重建同一路径缓存，并必须重新生成 manifest/hash。
+- raw 落地必须返回 SHA-256 hash 与行数，用于真实样例的复现、diff 与 manifest 校验。
+- 同一 `{vendor}/{YYYYMMDD}` raw 目录必须生成 `raw_manifest.json`，至少包含：`vendor`、`asof_date`、`symbols`、`input.source`、`source`、`output_files`、`file_hashes`、`created_at`。
+- `created_at` 在可复现测试中应可固定；默认按 `asof_date` 当天 `Asia/Shanghai` 零点生成，避免同一输入重复构建产生 manifest 漂移。
+
+字段契约由 `tests/regression/test_akshare_contract.py` 与 `tests/regression/test_akshare_raw_cache.py` 锁定。缺失关键原始字段、非法价格、非法成交额、非法复权因子、违反 PIT 边界或默认覆盖 raw 时必须失败。
 
 ### 3.4 Snapshot 最小依赖
 
-Phase 1 的 snapshot 至少必须包含：
+Phase 1 的 snapshot 是回测唯一可用来源。Step 1 冻结后，进入真实链路闭环的 snapshot 至少必须包含：
 
 | 文件 | 说明 |
 |---|---|
@@ -146,10 +171,12 @@ Phase 1 的 snapshot 至少必须包含：
 约束：
 
 - 回测不得直接访问 raw、interim、processed；snapshot 是回测唯一可用来源。
-- snapshot 中所有表必须满足 `effective_date <= asof_date`。
+- snapshot 中所有带 `effective_date` 的表必须满足 `effective_date <= asof_date`。
 - snapshot 中所有行情必须满足 `trade_date <= asof_date`。
 - snapshot 中 `etf_master` 不得包含 `list_date > asof_date` 的 ETF。
 - snapshot 必须保留已退市 ETF 的历史主数据，但 `can_open_new_position` 必须为 `false`。
+- `manifest.json` 必须记录 `snapshot_version`、`asof_date`、输入 raw/reference 文件、SHA-256、schema version、行数、行情日期范围。
+- snapshot 输出必须稳定排序、稳定列顺序，保证同一输入可复现、可 diff、可 hash 校验。
 
 ### 3.5 行业分类 `industry_mapping`
 
