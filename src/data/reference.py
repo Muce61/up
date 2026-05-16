@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
+import numpy as np
 import pandas as pd
 
 VALID_ETF_TYPES = {
@@ -171,7 +172,7 @@ def _check_date_column(df: pd.DataFrame, col: str, table: str, *, allow_null: bo
 
 def _check_bool_column(df: pd.DataFrame, col: str, table: str) -> None:
     for idx, value in df[col].items():
-        if not isinstance(value, bool):
+        if not isinstance(value, (bool, np.bool_)):
             raise ValueError(f"{table}.{col} row {idx} must be bool")
 
 
